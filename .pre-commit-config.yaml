@@ -7,12 +7,19 @@ repos:
       - id: check-ast
       - id: check-json
       - id: check-yaml
+      - id: check-added-large-files
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.8
     hooks:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.21
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.11.2
     hooks:

@@ -102,6 +102,11 @@ The hook set covers linting and formatting via Ruff (including import sorting an
 |-- .gitignore
 |-- .pre-commit-config.yaml
 |-- .env.example
+|-- .github/
+|   |-- dependabot.yml
+|   |-- workflows/
+|   |   |-- codeql.yml
+|   |   `-- secret-scanning.yml
 |-- Dockerfile
 |-- docker-compose.yml
 |-- pyproject.toml
