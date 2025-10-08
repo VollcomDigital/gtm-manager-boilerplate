@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "mms-gtm-manager"
+version = "0.1.0"
+description = "Internal toolkit for automating MediaMarktSaturn Google Tag Manager workflows."
+authors = ["MediaMarktSaturn Analytics <analytics@example.com>"]
+readme = "README.md"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+google-api-python-client = "^2.147.0"
+google-auth = "^2.34.0"
+google-auth-oauthlib = "^1.2.1"
+PyYAML = "^6.0.2"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.11.2"
+pre-commit = "^3.8.0"
+ruff = "^0.6.8"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+strict_optional = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-select = [
+  "I",  # isort-compatible import sorting
+  "B",  # bugbear
+]
+
+[tool.ruff.lint]
+ignore = []

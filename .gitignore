@@ -1,0 +1,25 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+.env
+.env.*
+!.env.example
+
+# Project tooling
+.cache/
+.idea/
+.vscode/
+.ruff_cache/
+
+data/exports/*.csv
+
+# OS files
+.DS_Store
+Thumbs.db

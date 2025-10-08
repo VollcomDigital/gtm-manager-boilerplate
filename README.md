@@ -1,0 +1,132 @@
+# VD GTM Manager
+
+Internal toolkit for managing Google Tag Manager (GTM) containers and tags across Vollcom Digital properties.
+
+## What's inside
+- GA4 exporter (`src/exporters/export_ga4_from_gtm.py`) that pulls the latest container version and writes GA4 tags plus parameters to CSV.
+- Salesline-aware configuration so multiple container IDs can be managed from a single YAML mapping.
+- Poetry, Docker Compose, and pre-commit hooks to keep development consistent across operating systems.
+
+## Getting started
+```bash
+poetry install
+```
+
+### Running the exporter
+Direct container IDs:
+```bash
+poetry run python src/exporters/export_ga4_from_gtm.py \
+  --auth user \
+  --account-id 2824463661 \
+  --container-id 51955729 \
+  --credentials /absolute/path/to/client_secrets.json \
+  --output ./data/exports/ga4_tags.csv
+```
+
+Using a salesline mapping:
+```bash
+poetry run python src/exporters/export_ga4_from_gtm.py \
+  --auth user \
+  --salesline mediamarkt \
+  --credentials /absolute/path/to/client_secrets.json \
+  --output ./data/exports/ga4_tags.csv
+```
+You can also skip the file entirely and supply mappings via an environment variable. Example (PowerShell):
+```powershell
+$env:GTM_SALESLINES_JSON = '{"mediamarkt":{"account_id":"0000000000","container_id":"GTM-ABC123"}}'
+poetry run python src/exporters/export_ga4_from_gtm.py `
+  --auth user `
+  --salesline mediamarkt `
+  --credentials $env:GTM_CREDENTIALS_PATH `
+  --output ./data/exports/ga4_tags.csv
+```
+Grouped entries (e.g., `central: { ga4: {...} }`) are flattened automatically to keys such as `central_ga4`.
+
+### Listing GTM accounts
+```bash
+poetry run python src/exporters/list_gtm_accounts.py \
+  --auth user \
+  --credentials /absolute/path/to/client_secrets.json \
+  --with-containers
+```
+Use `--output ./accounts.json` to persist the response or drop `--with-containers` to only list account metadata. A convenience wrapper is available via `scripts/list_accounts.sh`.
+
+## Authentication options
+- **User OAuth flow (default and recommended)**: Create OAuth client credentials in Google Cloud Console (Desktop App) and store the JSON securely outside the repo. Point `--credentials` (or `GTM_CREDENTIALS_PATH`) at that file; a browser consent screen opens on first run and caches tokens locally.
+- **Service account** *(optional, if your org provides one)*: Store the service-account key JSON outside the repo and reference it via `--credentials` or `GTM_CREDENTIALS_PATH`. Ensure the service account has at least read access to the GTM containers.
+
+## Docker usage
+### User OAuth example
+Mount your desktop OAuth client secrets into the container and run:
+```bash
+docker compose run --rm \
+  -e GTM_SALESLINE=mediamarkt \
+  -e GTM_AUTH_METHOD=user \
+  -e GTM_CREDENTIALS_PATH=/secrets/client_secrets.json \
+  -v /absolute/path/to/client_secrets.json:/secrets/client_secrets.json:ro \
+  gtm-manager
+```
+
+### Service account example
+Build once, then run with either direct IDs or a salesline key. Example with salesline mapping:
+```bash
+docker compose run --rm \
+  -e GTM_SALESLINE=mediamarkt \
+  -e GTM_AUTH_METHOD=service \
+  -e GTM_CREDENTIALS_PATH=/secrets/service_account.json \
+  -v /absolute/path/to/service_account.json:/secrets/service_account.json:ro \
+  gtm-manager
+```
+For direct IDs, omit `GTM_SALESLINE` and set `GTM_ACCOUNT_ID` and `GTM_CONTAINER_ID` instead. Optional overrides:
+- `GTM_SALESLINES_JSON` for supplying multiple mappings directly in the container environment (single-line JSON).
+- `GTM_OUTPUT_PATH` (defaults to `/app/data/exports/ga4_tags.csv`)
+
+## Pre-commit hooks
+Install hooks after `poetry install`:
+```bash
+poetry run pre-commit install
+poetry run pre-commit run --all-files
+```
+The hook set covers linting and formatting via Ruff (including import sorting and Bugbear rules), typing checks with mypy, and general hygiene checks.
+
+## Configuration
+- Duplicate `.env.example` to `.env` (or export the variables in your shell) and fill in paths, account IDs, and JSON mappings as needed.
+- Store OAuth client secrets or service-account keys outside the repository and point `GTM_CREDENTIALS_PATH` (or `--credentials`) to their absolute location.
+- Provide GTM account/container mappings via the `GTM_SALESLINES_JSON` environment variable. The JSON payload should look like `{"mediamarkt_de":{"account_id":"...","container_id":"..."}}`. Grouped entries such as `central.ga4` can be represented by nested objects, which the exporter flattens automatically.
+- Exported CSV files live in `data/exports/`, which remains outside version control.
+
+## Project layout
+```text
+.
+|-- .dockerignore
+|-- .gitignore
+|-- .pre-commit-config.yaml
+|-- .env.example
+|-- Dockerfile
+|-- docker-compose.yml
+|-- pyproject.toml
+|-- README.md
+|-- data/
+|   `-- exports/
+|-- scripts/
+|   |-- export_ga4_tags.sh
+|   |-- list_accounts.sh
+|   `-- sync_all_containers.sh
+`-- src/
+    |-- __init__.py
+    |-- exporters/
+    |   |-- export_ga4_from_gtm.py
+    |   `-- list_gtm_accounts.py
+    |-- managers/
+    |   |-- container_manager.py
+    |   |-- tag_manager.py
+    |   `-- trigger_manager.py
+    `-- utils/
+        |-- auth.py
+        `-- helpers.py
+```
+
+## Next steps
+- Flesh out the manager/util modules with real GTM automation workflows (diff, sync, publish).
+- Add tests for the exporter and future automation logic; wire them into pre-commit or CI.
+- Extend the exporter to cover triggers, variables, or workspace snapshots if needed.
