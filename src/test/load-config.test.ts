@@ -47,6 +47,7 @@ test("loadWorkspaceDesiredState: supports JSON + YAML overlays (merge by name)",
 
   const tagA = merged.tags.find((t) => t.name === "Tag A");
   assert.ok(tagA);
-  assert.deepEqual(tagA.parameter?.[0]?.value, "<span/>");
+  const value = (tagA as unknown as { parameter?: Array<{ value?: unknown }> }).parameter?.[0]?.value;
+  assert.equal(value, "<span/>");
 });
 
