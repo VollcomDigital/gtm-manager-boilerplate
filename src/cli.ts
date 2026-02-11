@@ -62,6 +62,10 @@ GTM IaC CLI (GTM API v2)
 Usage:
   npm run cli -- <command> [--flags]
 
+Global flags:
+  --json           Print JSON output where supported
+  --dry-run        Do not perform mutations; print intended actions
+
 Commands:
   list-accounts [--json]
   list-containers --account-id <id> | --account-name <name> [--json]
@@ -121,10 +125,35 @@ async function ensureWorkspace(
   gtm: GtmClient,
   locator: AccountContainerLocator,
   workspaceName: string,
-  asJson: boolean
+  asJson: boolean,
+  dryRun: boolean
 ): Promise<void> {
   const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
-  const workspace = await gtm.getOrCreateWorkspace({ accountId, containerId, workspaceName });
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+
+  const workspaces = await gtm.listWorkspaces(containerPath);
+  const existing = workspaces.find((w) => (w.name ?? "").toLowerCase() === workspaceName.toLowerCase());
+
+  if (existing) {
+    if (asJson) {
+      console.log(JSON.stringify(existing, null, 2));
+      return;
+    }
+    console.log(`workspaceId=${existing.workspaceId ?? "?"}\tname=${existing.name ?? "?"}`);
+    return;
+  }
+
+  if (dryRun) {
+    const msg = { dryRun: true, action: "createWorkspace", containerPath, workspaceName };
+    if (asJson) {
+      console.log(JSON.stringify(msg, null, 2));
+    } else {
+      console.log(`dry-run: would create workspace name="${workspaceName}" in ${containerPath}`);
+    }
+    return;
+  }
+
+  const workspace = await gtm.createWorkspace(containerPath, workspaceName);
 
   if (asJson) {
     console.log(JSON.stringify(workspace, null, 2));
@@ -154,18 +183,45 @@ async function createVersionFromWorkspace(
   locator: AccountContainerLocator,
   workspaceName: string,
   options: { versionName?: string; notes?: string },
-  asJson: boolean
+  asJson: boolean,
+  dryRun: boolean
 ): Promise<void> {
   const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
-  const workspace = await gtm.getOrCreateWorkspace({ accountId, containerId, workspaceName });
-  if (!workspace.workspaceId) {
-    throw new Error("Workspace response missing workspaceId.");
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+
+  const workspaces = await gtm.listWorkspaces(containerPath);
+  let workspace = workspaces.find((w) => (w.name ?? "").toLowerCase() === workspaceName.toLowerCase());
+
+  if (!workspace && dryRun) {
+    const msg = { dryRun: true, action: "createVersion", note: "workspace does not exist", containerPath, workspaceName };
+    if (asJson) {
+      console.log(JSON.stringify(msg, null, 2));
+    } else {
+      console.log(`dry-run: would create version, but workspace "${workspaceName}" does not exist in ${containerPath}`);
+    }
+    return;
   }
+
+  if (!workspace) {
+    workspace = await gtm.createWorkspace(containerPath, workspaceName);
+  }
+
+  if (!workspace.workspaceId) throw new Error("Workspace response missing workspaceId.");
 
   const workspacePath = gtm.toWorkspacePath(accountId, containerId, workspace.workspaceId);
   const versionOptions: { name?: string; notes?: string } = {};
   if (options.versionName) versionOptions.name = options.versionName;
   if (options.notes) versionOptions.notes = options.notes;
+
+  if (dryRun) {
+    const msg = { dryRun: true, action: "createContainerVersionFromWorkspace", workspacePath, ...versionOptions };
+    if (asJson) {
+      console.log(JSON.stringify(msg, null, 2));
+    } else {
+      console.log(`dry-run: would create container version from ${workspacePath}`);
+    }
+    return;
+  }
 
   const res = await gtm.createContainerVersionFromWorkspace(workspacePath, versionOptions);
 
@@ -180,7 +236,22 @@ async function createVersionFromWorkspace(
   console.log(`created versionId=${versionId}\tname=${versionName}\tpath=${versionPath}`);
 }
 
-async function publishVersion(gtm: GtmClient, containerVersionPath: string, asJson: boolean): Promise<void> {
+async function publishVersion(
+  gtm: GtmClient,
+  containerVersionPath: string,
+  asJson: boolean,
+  dryRun: boolean
+): Promise<void> {
+  if (dryRun) {
+    const msg = { dryRun: true, action: "publishContainerVersion", containerVersionPath };
+    if (asJson) {
+      console.log(JSON.stringify(msg, null, 2));
+    } else {
+      console.log(`dry-run: would publish version path=${containerVersionPath}`);
+    }
+    return;
+  }
+
   const res = await gtm.publishContainerVersion(containerVersionPath);
   if (asJson) {
     console.log(JSON.stringify(res, null, 2));
@@ -192,7 +263,11 @@ async function publishVersion(gtm: GtmClient, containerVersionPath: string, asJs
   console.log(`published versionId=${versionId}\tname=${versionName}\tpath=${versionPath}`);
 }
 
-async function deleteWorkspace(gtm: GtmClient, workspacePath: string): Promise<void> {
+async function deleteWorkspace(gtm: GtmClient, workspacePath: string, dryRun: boolean): Promise<void> {
+  if (dryRun) {
+    console.log(JSON.stringify({ dryRun: true, action: "deleteWorkspace", workspacePath }));
+    return;
+  }
   await gtm.deleteWorkspace(workspacePath);
   console.log(`deleted workspace path=${workspacePath}`);
 }
@@ -201,7 +276,8 @@ async function resetWorkspace(
   gtm: GtmClient,
   locator: AccountContainerLocator,
   workspaceName: string,
-  asJson: boolean
+  asJson: boolean,
+  dryRun: boolean
 ): Promise<void> {
   if (workspaceName.toLowerCase() === "default workspace") {
     throw new Error("Refusing to reset the Default Workspace.");
@@ -216,8 +292,27 @@ async function resetWorkspace(
     const workspacePath =
       existing.path ?? (existing.workspaceId ? gtm.toWorkspacePath(accountId, containerId, existing.workspaceId) : undefined);
     if (workspacePath) {
+      if (dryRun) {
+        const msg = { dryRun: true, action: "resetWorkspace", note: "would delete existing workspace", workspacePath };
+        if (asJson) {
+          console.log(JSON.stringify(msg, null, 2));
+        } else {
+          console.log(`dry-run: would delete workspace path=${workspacePath}`);
+        }
+        return;
+      }
       await gtm.deleteWorkspace(workspacePath);
     }
+  }
+
+  if (dryRun) {
+    const msg = { dryRun: true, action: "resetWorkspace", note: "would create workspace", containerPath, workspaceName };
+    if (asJson) {
+      console.log(JSON.stringify(msg, null, 2));
+    } else {
+      console.log(`dry-run: would create workspace name="${workspaceName}" in ${containerPath}`);
+    }
+    return;
   }
 
   const created = await gtm.createWorkspace(containerPath, workspaceName);
@@ -243,6 +338,7 @@ async function main(): Promise<void> {
   const gtm = new GtmClient(auth, { logger });
 
   const asJson = isJsonFlagSet(parsed.flags);
+  const dryRun = parsed.flags["dry-run"] === true || parsed.flags.dryRun === true;
 
   switch (parsed.command) {
     case "list-accounts": {
@@ -285,7 +381,8 @@ async function main(): Promise<void> {
           containerId: args.containerId
         },
         args.workspaceName,
-        asJson
+        asJson,
+        dryRun
       );
       return;
     }
@@ -343,7 +440,8 @@ async function main(): Promise<void> {
         },
         args.workspaceName,
         versionInput,
-        asJson
+        asJson,
+        dryRun
       );
       return;
     }
@@ -358,7 +456,7 @@ async function main(): Promise<void> {
         versionPath: getStringFlag(parsed.flags, "version-path")
       });
 
-      await publishVersion(gtm, args.versionPath, asJson);
+      await publishVersion(gtm, args.versionPath, asJson, dryRun);
       return;
     }
     case "delete-workspace": {
@@ -374,7 +472,7 @@ async function main(): Promise<void> {
         confirm: parsed.flags.confirm === true || parsed.flags.yes === true
       });
 
-      await deleteWorkspace(gtm, args.workspacePath);
+      await deleteWorkspace(gtm, args.workspacePath, dryRun);
       return;
     }
     case "reset-workspace": {
@@ -401,7 +499,8 @@ async function main(): Promise<void> {
           containerId: args.containerId
         },
         args.workspaceName,
-        asJson
+        asJson,
+        dryRun
       );
       return;
     }
