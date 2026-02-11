@@ -139,8 +139,8 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 - [ ] Environments (create/update/delete + promote publish flows)
 - [x] Built-in variables (enable/disable + revert)
 - [x] Zones (GTM 360) — CRUD + diff/sync (already supported)
-- [ ] Server-side GTM: Clients (CRUD + diff/sync)
-- [ ] Server-side GTM: Transformations (CRUD + diff/sync)
+- [x] Server-side GTM: Clients (CRUD + diff/sync)
+- [x] Server-side GTM: Transformations (CRUD + diff/sync)
 - [ ] User permissions / access reporting (read-only)
 
 ### Drift model improvements
