@@ -14,7 +14,7 @@
     "cli": "tsx src/cli.ts",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/test"
+    "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {
     "dotenv": "^17.2.4",
