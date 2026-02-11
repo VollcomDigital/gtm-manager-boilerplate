@@ -145,7 +145,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ### Drift model improvements
 - [x] Diff desired state vs **live** published container version (not just workspace state)
-- [ ] Optional policy: block sync if live != desired unless `--force`
+- [x] Optional policy: block sync if live != desired unless `--force`
 
 ### Safety / policy engine
 - [ ] Protected entities (never delete by name/label)
