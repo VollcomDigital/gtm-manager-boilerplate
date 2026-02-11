@@ -47,11 +47,9 @@ function clamp(n: number, min: number, max: number): number {
  * @throws Last error if all retries fail.
  */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions): Promise<T> {
-  let attempt = 0;
   // attempt=0 is the initial call; retries cover additional attempts.
   // total attempts = 1 + retries.
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  for (let attempt = 0; attempt <= options.retries; attempt += 1) {
     try {
       return await fn();
     } catch (err: unknown) {
@@ -67,9 +65,11 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions):
 
       options.onRetry?.({ attempt, delayMs, err });
       await sleep(delayMs);
-      attempt += 1;
     }
   }
+
+  // Should be unreachable.
+  throw new Error("withRetry exhausted without returning or throwing.");
 }
 
 function asNumber(value: unknown): number | undefined {
