@@ -11,7 +11,7 @@ import {
   type GtmVariable
 } from "../types/gtm-schema";
 import type { Logger } from "./logger";
-import { isRetryableGoogleApiError, withRetry, type OperationKind } from "./retry";
+import { isRetryableGoogleApiError, withRetry, type OperationKind, type RetryOptions } from "./retry";
 
 const READ_RETRIES = 4;
 const WRITE_RETRIES = 2;
@@ -63,7 +63,7 @@ export interface ResolvedAccountContainer {
 
 export class GtmClient {
   private readonly api: tagmanager_v2.Tagmanager;
-  private readonly logger?: Logger;
+  private readonly logger: Logger | undefined;
 
   constructor(auth: GoogleAuth, options: { logger?: Logger } = {}) {
     this.api = google.tagmanager({ version: "v2", auth });
@@ -156,25 +156,28 @@ export class GtmClient {
   ): Promise<T> {
     try {
       const retries = operationKind === "read" ? READ_RETRIES : WRITE_RETRIES;
-      return await withRetry(async () => {
-        const res = await fn();
-        return res.data;
-      }, {
+      const retryOptions: RetryOptions = {
         retries,
         baseDelayMs: RETRY_BASE_DELAY_MS,
         maxDelayMs: RETRY_MAX_DELAY_MS,
         jitter: true,
-        onRetry: this.logger
-          ? ({ attempt, delayMs, err }) => {
-              this.logger?.warn(`${context} retrying`, {
-                attempt,
-                delayMs,
-                error: this.formatError(err)
-              });
-            }
-          : undefined,
         shouldRetry: isRetryableGoogleApiError
-      });
+      };
+
+      if (this.logger) {
+        retryOptions.onRetry = ({ attempt, delayMs, err }) => {
+          this.logger.warn(`${context} retrying`, {
+            attempt,
+            delayMs,
+            error: this.formatError(err)
+          });
+        };
+      }
+
+      return await withRetry(async () => {
+        const res = await fn();
+        return res.data;
+      }, retryOptions);
     } catch (err: unknown) {
       throw new Error(`${context} failed: ${this.formatError(err)}`);
     }
