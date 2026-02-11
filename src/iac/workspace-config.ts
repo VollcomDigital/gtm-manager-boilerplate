@@ -10,17 +10,31 @@ import {
   zGtmZone
 } from "../types/gtm-schema";
 
-const EMPTY_PROTECTED_NAMES = {
-  builtInVariableTypes: [],
-  folders: [],
-  clients: [],
-  transformations: [],
-  tags: [],
-  triggers: [],
-  variables: [],
-  templates: [],
-  zones: []
-} as const;
+type WorkspaceProtectedNames = {
+  builtInVariableTypes: string[];
+  folders: string[];
+  clients: string[];
+  transformations: string[];
+  tags: string[];
+  triggers: string[];
+  variables: string[];
+  templates: string[];
+  zones: string[];
+};
+
+function makeEmptyProtectedNames(): WorkspaceProtectedNames {
+  return {
+    builtInVariableTypes: [],
+    folders: [],
+    clients: [],
+    transformations: [],
+    tags: [],
+    triggers: [],
+    variables: [],
+    templates: [],
+    zones: []
+  };
+}
 
 const zWorkspaceProtectedNames = z
   .object({
@@ -35,14 +49,14 @@ const zWorkspaceProtectedNames = z
     zones: z.array(z.string().trim().min(1)).default([])
   })
   .strict()
-  .default(EMPTY_PROTECTED_NAMES);
+  .default(makeEmptyProtectedNames);
 
 export const zWorkspacePolicy = z
   .object({
     protectedNames: zWorkspaceProtectedNames
   })
   .strict()
-  .default({ protectedNames: EMPTY_PROTECTED_NAMES });
+  .default(() => ({ protectedNames: makeEmptyProtectedNames() }));
 
 /**
  * Minimal desired-state schema for a single GTM Workspace.
