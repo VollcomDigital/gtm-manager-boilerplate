@@ -159,6 +159,22 @@ function matchesLabels(labels: Record<string, string> | undefined, filter: Recor
   return true;
 }
 
+function toLocator(target: {
+  accountId?: string;
+  accountName?: string;
+  containerId?: string;
+  containerPublicId?: string;
+  containerName?: string;
+}): AccountContainerLocator {
+  return {
+    ...(target.accountId ? { accountId: target.accountId } : {}),
+    ...(target.accountName ? { accountName: target.accountName } : {}),
+    ...(target.containerId ? { containerId: target.containerId } : {}),
+    ...(target.containerPublicId ? { containerPublicId: target.containerPublicId } : {}),
+    ...(target.containerName ? { containerName: target.containerName } : {})
+  };
+}
+
 async function listAccounts(gtm: GtmClient, asJson: boolean): Promise<void> {
   const accounts = await gtm.listAccounts();
   if (asJson) {
@@ -527,7 +543,7 @@ async function diffRepoFromConfig(
 
   for (const c of selected) {
     try {
-      const { accountId, containerId } = await gtm.resolveAccountAndContainer(c.target);
+      const { accountId, containerId } = await gtm.resolveAccountAndContainer(toLocator(c.target));
       const ws = await gtm.getOrCreateWorkspace({
         accountId,
         containerId,
@@ -649,7 +665,7 @@ async function syncRepoFromConfig(
 
   for (const c of selected) {
     try {
-      const { accountId, containerId } = await gtm.resolveAccountAndContainer(c.target);
+      const { accountId, containerId } = await gtm.resolveAccountAndContainer(toLocator(c.target));
       const ws = await gtm.getOrCreateWorkspace({
         accountId,
         containerId,
@@ -679,10 +695,11 @@ async function syncRepoFromConfig(
       };
 
       if (opts.publish && !opts.dryRun) {
-        const created = await gtm.createContainerVersionFromWorkspace(workspacePath, {
-          name: opts.versionName,
-          notes: opts.notes
-        });
+        const versionOptions: { name?: string; notes?: string } = {};
+        if (opts.versionName) versionOptions.name = opts.versionName;
+        if (opts.notes) versionOptions.notes = opts.notes;
+
+        const created = await gtm.createContainerVersionFromWorkspace(workspacePath, versionOptions);
         const versionPath = created.containerVersion?.path ?? undefined;
         if (!versionPath) {
           throw new Error("Version creation did not return containerVersion.path.");
@@ -1112,19 +1129,30 @@ async function main(): Promise<void> {
         throw new Error("Refusing to mutate with deletions/publish without --confirm (or --yes).");
       }
 
+      const repoOpts: {
+        containerKeys: string[];
+        labels: Record<string, string>;
+        deleteMissing: boolean;
+        dryRun: boolean;
+        validateVariableRefs: boolean;
+        publish: boolean;
+        versionName?: string;
+        notes?: string;
+      } = {
+        containerKeys: parseCsv(args.containerKeys),
+        labels: parseLabelsFilter(args.labels),
+        deleteMissing,
+        dryRun,
+        validateVariableRefs,
+        publish
+      };
+      if (args.versionName) repoOpts.versionName = args.versionName;
+      if (args.notes) repoOpts.notes = args.notes;
+
       await syncRepoFromConfig(
         gtm,
         args.config,
-        {
-          containerKeys: parseCsv(args.containerKeys),
-          labels: parseLabelsFilter(args.labels),
-          deleteMissing,
-          dryRun,
-          validateVariableRefs,
-          publish,
-          versionName: args.versionName,
-          notes: args.notes
-        },
+        repoOpts,
         asJson
       );
       return;
