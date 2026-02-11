@@ -451,7 +451,16 @@ async function updateEnvironment(
 
   // Merge with current to avoid accidental field loss if the endpoint behaves like PUT.
   const current = await gtm.getEnvironment(environmentPath);
-  const merged = { ...current, ...patch };
+  const base: GtmEnvironment = {};
+  if (current.name != null) base.name = current.name;
+  if (current.type != null) base.type = current.type;
+  if (current.description != null) base.description = current.description;
+  if (current.url != null) base.url = current.url;
+  if (current.enableDebug != null) base.enableDebug = current.enableDebug;
+  if (current.containerVersionId != null) base.containerVersionId = current.containerVersionId;
+  if (current.workspaceId != null) base.workspaceId = current.workspaceId;
+
+  const merged: GtmEnvironment = { ...base, ...patch };
   const fingerprint = current.fingerprint ?? undefined;
   const updated = await gtm.updateEnvironment(environmentPath, merged, fingerprint ? { fingerprint } : {});
 
@@ -1104,8 +1113,8 @@ async function main(): Promise<void> {
       const env: GtmEnvironment = {
         name: args.name,
         type: args.type ?? "USER",
-        url: args.url,
-        description: args.description,
+        ...(args.url ? { url: args.url } : {}),
+        ...(args.description ? { description: args.description } : {}),
         ...(enableDebug !== undefined ? { enableDebug } : {})
       };
 
