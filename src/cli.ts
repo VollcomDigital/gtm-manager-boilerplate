@@ -42,7 +42,11 @@ function parseCli(argv: string[]): ParsedCli {
     flags[key] = true;
   }
 
-  return { command, flags, positionals };
+  const parsed: ParsedCli = { flags, positionals };
+  if (command) {
+    parsed.command = command;
+  }
+  return parsed;
 }
 
 function isJsonFlagSet(flags: Record<string, FlagValue>): boolean {
@@ -144,12 +148,15 @@ async function main(): Promise<void> {
       return;
     }
     case "list-containers": {
+      const locator: { accountId?: string; accountName?: string } = {};
+      const accountId = getStringFlag(parsed.flags, "account-id");
+      if (accountId) locator.accountId = accountId;
+      const accountName = getStringFlag(parsed.flags, "account-name");
+      if (accountName) locator.accountName = accountName;
+
       await listContainers(
         gtm,
-        {
-          accountId: getStringFlag(parsed.flags, "account-id"),
-          accountName: getStringFlag(parsed.flags, "account-name")
-        },
+        locator,
         asJson
       );
       return;
