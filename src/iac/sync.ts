@@ -473,10 +473,7 @@ function collectVariableReferencesFromTags(tags: unknown[]): Set<string> {
 
 function collectVariableReferencesDeep(value: unknown, out: Set<string>): void {
   if (typeof value === "string") {
-    const re = /\{\{\s*([^}]+?)\s*\}\}/g;
-    let m: RegExpExecArray | null;
-    // eslint-disable-next-line no-cond-assign
-    while ((m = re.exec(value))) {
+    for (const m of value.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) {
       const name = m[1]?.trim();
       if (name) out.add(name);
     }
