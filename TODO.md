@@ -18,8 +18,8 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Authenticate
   - [x] List accounts
   - [x] List containers for a chosen account
-- [ ] Add basic logging strategy (structured JSON logs recommended for CI)
-- [ ] Document required IAM permissions + how to grant container access to the service account
+- [x] Add basic logging strategy (structured JSON logs recommended for CI)
+- [x] Document required IAM permissions + how to grant container access to the service account
 
 ---
 
@@ -27,7 +27,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ### Workspace operations
 - [x] Get/create workspace by name (idempotent)
-- [ ] Workspace cleanup strategy (delete/archival) for CI runs
+- [x] Workspace cleanup strategy (delete/archival) for CI runs
 - [x] Validate GTM paths and IDs (accounts/*/containers/*/workspaces/*)
 
 ### Tags / Triggers / Variables (CRUD)
