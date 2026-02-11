@@ -78,6 +78,8 @@ Global flags:
 
 Commands:
   list-accounts [--json]
+  list-user-permissions --account-id <id> [--json]
+  get-user-permission --user-permission-path <accounts/.../user_permissions/...> [--json]
   list-containers --account-id <id> | --account-name <name> [--json]
   ensure-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--json]
   list-workspaces --account-id <id> --container-id <id|GTM-XXXX> [--json]
@@ -101,6 +103,8 @@ Commands:
 
 Examples:
   npm run cli -- list-accounts --json
+  npm run cli -- list-user-permissions --account-id 1234567890 --json
+  npm run cli -- get-user-permission --user-permission-path accounts/123/user_permissions/456 --json
   npm run cli -- list-containers --account-id 1234567890 --json
   npm run cli -- ensure-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --json
   npm run cli -- list-workspaces --account-id 1234567890 --container-id 51955729 --json
@@ -206,6 +210,27 @@ async function listAccounts(gtm: GtmClient, asJson: boolean): Promise<void> {
   for (const a of accounts) {
     console.log(`${a.name ?? "?"}\taccountId=${a.accountId ?? "?"}`);
   }
+}
+
+async function listUserPermissions(gtm: GtmClient, accountId: string, asJson: boolean): Promise<void> {
+  const perms = await gtm.listUserPermissions(accountId);
+  if (asJson) {
+    console.log(JSON.stringify(perms, null, 2));
+    return;
+  }
+  for (const p of perms) {
+    const email = p.emailAddress ?? "?";
+    console.log(`${email}\tpath=${p.path ?? "?"}`);
+  }
+}
+
+async function getUserPermission(gtm: GtmClient, userPermissionPath: string, asJson: boolean): Promise<void> {
+  const perm = await gtm.getUserPermission(userPermissionPath);
+  if (asJson) {
+    console.log(JSON.stringify(perm, null, 2));
+    return;
+  }
+  console.log(`email=${perm.emailAddress ?? "?"}\tpath=${perm.path ?? "?"}`);
 }
 
 async function listContainers(gtm: GtmClient, locator: { accountId?: string; accountName?: string }, asJson: boolean): Promise<void> {
@@ -928,6 +953,34 @@ async function main(): Promise<void> {
   switch (parsed.command) {
     case "list-accounts": {
       await listAccounts(gtm, asJson);
+      return;
+    }
+    case "list-user-permissions": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id")
+      });
+
+      await listUserPermissions(gtm, args.accountId, asJson);
+      return;
+    }
+    case "get-user-permission": {
+      const schema = z
+        .object({
+          userPermissionPath: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        userPermissionPath: getStringFlag(parsed.flags, "user-permission-path")
+      });
+
+      await getUserPermission(gtm, args.userPermissionPath, asJson);
       return;
     }
     case "list-containers": {

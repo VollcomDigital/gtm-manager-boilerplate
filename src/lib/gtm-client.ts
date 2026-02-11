@@ -219,6 +219,25 @@ export class GtmClient {
     return data.account ?? [];
   }
 
+  // ----------------------------
+  // User Permissions (account-level)
+  // ----------------------------
+  async listUserPermissions(accountId: string): Promise<tagmanager_v2.Schema$UserPermission[]> {
+    const parent = this.toAccountPath(accountId);
+    return await this.listAllPages("GTM accounts.user_permissions.list", async (pageToken) => {
+      const data = await this.request("GTM accounts.user_permissions.list", () =>
+        this.api.accounts.user_permissions.list(pageToken === undefined ? { parent } : { parent, pageToken })
+      );
+      return { items: data.userPermission ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async getUserPermission(userPermissionPath: string): Promise<tagmanager_v2.Schema$UserPermission> {
+    return await this.request("GTM accounts.user_permissions.get", () =>
+      this.api.accounts.user_permissions.get({ path: userPermissionPath })
+    );
+  }
+
   async getAccountIdByName(accountName: string): Promise<string> {
     const accounts = await this.listAccounts();
     const match = accounts.find((a) => (a.name ?? "").toLowerCase() === accountName.toLowerCase());
