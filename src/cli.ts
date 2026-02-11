@@ -76,6 +76,8 @@ Usage:
 Global flags:
   --json           Print JSON output where supported
   --dry-run        Do not perform mutations; print intended actions
+  --block-on-live-drift  Refuse sync if live version != desired (unless --force)
+  --force          Override safety checks like --block-on-live-drift
 
 Commands:
   list-accounts [--json]
@@ -842,11 +844,41 @@ async function syncWorkspaceFromConfig(
   locator: AccountContainerLocator,
   workspaceName: string,
   configPath: string,
-  opts: { deleteMissing: boolean; dryRun: boolean; updateExisting: boolean; validateVariableRefs: boolean },
+  opts: {
+    deleteMissing: boolean;
+    dryRun: boolean;
+    updateExisting: boolean;
+    validateVariableRefs: boolean;
+    blockOnLiveDrift: boolean;
+    force: boolean;
+  },
   asJson: boolean
 ): Promise<void> {
   const desired = await loadWorkspaceDesiredState(configPath);
-  const { workspacePath } = await resolveWorkspacePathByName(gtm, locator, workspaceName);
+  const { containerPath, workspacePath } = await resolveWorkspacePathByName(gtm, locator, workspaceName);
+
+  if (opts.blockOnLiveDrift && !opts.force && !opts.dryRun) {
+    const live = await gtm.getLiveContainerVersion(containerPath);
+    const liveSnapshot = snapshotFromContainerVersion(live);
+    const liveDiff = diffWorkspace(desired, liveSnapshot);
+    const hasDrift = [
+      liveDiff.builtInVariables,
+      liveDiff.folders,
+      liveDiff.clients,
+      liveDiff.transformations,
+      liveDiff.tags,
+      liveDiff.triggers,
+      liveDiff.variables,
+      liveDiff.templates,
+      liveDiff.zones
+    ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
+    if (hasDrift) {
+      throw new Error(
+        `Live published version differs from desired state; refusing to sync without --force. ` +
+          `Run: npm run cli -- diff-live --account-id <...> --container-id <...> --config ${configPath}`
+      );
+    }
+  }
 
   const result = await syncWorkspace(gtm, workspacePath, desired, {
     dryRun: opts.dryRun,
@@ -872,6 +904,8 @@ async function syncRepoFromConfig(
     deleteMissing: boolean;
     dryRun: boolean;
     validateVariableRefs: boolean;
+    blockOnLiveDrift: boolean;
+    force: boolean;
     publish: boolean;
     versionName?: string;
     notes?: string;
@@ -900,6 +934,36 @@ async function syncRepoFromConfig(
   for (const c of selected) {
     try {
       const { accountId, containerId } = await gtm.resolveAccountAndContainer(toLocator(c.target));
+      const containerPath = gtm.toContainerPath(accountId, containerId);
+
+      if (opts.blockOnLiveDrift && !opts.force && !opts.dryRun) {
+        const live = await gtm.getLiveContainerVersion(containerPath);
+        const liveSnapshot = snapshotFromContainerVersion(live);
+        const liveDiff = diffWorkspace(c.workspace, liveSnapshot);
+        const hasDrift = [
+          liveDiff.builtInVariables,
+          liveDiff.folders,
+          liveDiff.clients,
+          liveDiff.transformations,
+          liveDiff.tags,
+          liveDiff.triggers,
+          liveDiff.variables,
+          liveDiff.templates,
+          liveDiff.zones
+        ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
+        if (hasDrift) {
+          results.push({
+            key: c.key,
+            labels: c.labels ?? {},
+            error:
+              "Live published version differs from desired state; refusing to sync without --force. Run diff-live for details.",
+            version: { versionPath: live.path ?? undefined }
+          });
+          hadError = true;
+          continue;
+        }
+      }
+
       const ws = await gtm.getOrCreateWorkspace({
         accountId,
         containerId,
@@ -1011,6 +1075,9 @@ async function main(): Promise<void> {
   const validateVariableRefs =
     parsed.flags["validate-variable-refs"] === true || parsed.flags.validateVariableRefs === true;
   const publish = parsed.flags.publish === true;
+  const blockOnLiveDrift =
+    parsed.flags["block-on-live-drift"] === true || parsed.flags.blockOnLiveDrift === true;
+  const force = parsed.flags.force === true;
   const confirmFlag = parsed.flags.confirm === true || parsed.flags.yes === true;
 
   switch (parsed.command) {
@@ -1488,7 +1555,9 @@ async function main(): Promise<void> {
           deleteMissing,
           dryRun,
           updateExisting: true,
-          validateVariableRefs
+          validateVariableRefs,
+          blockOnLiveDrift,
+          force
         },
         asJson
       );
@@ -1551,6 +1620,8 @@ async function main(): Promise<void> {
         deleteMissing: boolean;
         dryRun: boolean;
         validateVariableRefs: boolean;
+        blockOnLiveDrift: boolean;
+        force: boolean;
         publish: boolean;
         versionName?: string;
         notes?: string;
@@ -1560,6 +1631,8 @@ async function main(): Promise<void> {
         deleteMissing,
         dryRun,
         validateVariableRefs,
+        blockOnLiveDrift,
+        force,
         publish
       };
       if (args.versionName) repoOpts.versionName = args.versionName;
