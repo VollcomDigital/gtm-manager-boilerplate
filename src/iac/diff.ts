@@ -1,5 +1,5 @@
 import type { WorkspaceDesiredState } from "./workspace-config";
-import { stripDynamicFieldsDeep } from "./normalize";
+import { normalizeForDiff } from "./normalize";
 
 interface NamedEntity {
   name?: unknown;
@@ -27,11 +27,41 @@ export function matchesDesiredSubset(current: unknown, desired: unknown): boolea
 
   if (Array.isArray(desired)) {
     if (!Array.isArray(current)) return false;
-    if (current.length !== desired.length) return false;
-    for (let i = 0; i < desired.length; i += 1) {
-      if (!matchesDesiredSubset(current[i], desired[i])) return false;
+    if (desired.length === 0) return true;
+
+    // If desired array contains primitives, treat it as a subset.
+    const primitives = desired.every((v) => v === null || ["string", "number", "boolean"].includes(typeof v));
+    if (primitives) {
+      return desired.every((dv) => current.some((cv) => Object.is(cv, dv)));
     }
-    return true;
+
+    // If desired array contains named/keyed objects, match by identity key.
+    const desiredHasName = desired.every((v) => isRecord(v) && typeof v.name === "string");
+    const desiredHasKey = desired.every((v) => isRecord(v) && typeof v.key === "string");
+    if (desiredHasName || desiredHasKey) {
+      const identityKey = desiredHasName ? "name" : "key";
+      const currentIndex = new Map<string, unknown>();
+      for (const cv of current) {
+        if (!isRecord(cv)) continue;
+        const id = cv[identityKey];
+        if (typeof id === "string" && id.trim().length) {
+          currentIndex.set(id.toLowerCase(), cv);
+        }
+      }
+
+      for (const dv of desired) {
+        const id = (dv as Record<string, unknown>)[identityKey];
+        if (typeof id !== "string") return false;
+        const cv = currentIndex.get(id.toLowerCase());
+        if (!cv) return false;
+        if (!matchesDesiredSubset(cv, dv)) return false;
+      }
+      return true;
+    }
+
+    // Fallback: treat as ordered array (same length and position).
+    if (current.length !== desired.length) return false;
+    return desired.every((dv, i) => matchesDesiredSubset(current[i], dv));
   }
 
   if (!isRecord(current) || !isRecord(desired)) return false;
@@ -69,7 +99,7 @@ function diffByName(desired: Array<{ name: string }>, current: unknown[]): Entit
   for (const entity of current) {
     const name = getName(entity);
     if (!name) continue;
-    currentByName.set(name.toLowerCase(), stripDynamicFieldsDeep(entity));
+    currentByName.set(name.toLowerCase(), normalizeForDiff(entity));
   }
 
   const desiredNamesLower = new Set<string>();
@@ -85,7 +115,7 @@ function diffByName(desired: Array<{ name: string }>, current: unknown[]): Entit
       continue;
     }
 
-    const desiredNormalized = stripDynamicFieldsDeep(d);
+    const desiredNormalized = normalizeForDiff(d);
     if (!matchesDesiredSubset(c, desiredNormalized)) {
       update.push(d.name);
     }

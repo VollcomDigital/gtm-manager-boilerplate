@@ -7,7 +7,7 @@ import { GtmClient, type AccountContainerLocator } from "./lib/gtm-client";
 import { createLogger, type LogLevel } from "./lib/logger";
 import { diffWorkspace } from "./iac/diff";
 import { loadWorkspaceDesiredState } from "./iac/load-config";
-import { stripDynamicFieldsDeep } from "./iac/normalize";
+import { normalizeForDiff } from "./iac/normalize";
 import { fetchWorkspaceSnapshot } from "./iac/snapshot";
 
 type FlagValue = string | boolean;
@@ -361,10 +361,10 @@ async function exportWorkspaceSnapshot(
 
   const desiredLike = {
     workspaceName,
-    tags: snapshot.tags.map((t) => stripDynamicFieldsDeep(t)),
-    triggers: snapshot.triggers.map((t) => stripDynamicFieldsDeep(t)),
-    variables: snapshot.variables.map((v) => stripDynamicFieldsDeep(v)),
-    templates: snapshot.templates.map((t) => stripDynamicFieldsDeep(t))
+    tags: snapshot.tags.map((t) => normalizeForDiff(t)),
+    triggers: snapshot.triggers.map((t) => normalizeForDiff(t)),
+    variables: snapshot.variables.map((v) => normalizeForDiff(v)),
+    templates: snapshot.templates.map((t) => normalizeForDiff(t))
   };
 
   const json = JSON.stringify(desiredLike, null, 2);
