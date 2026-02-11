@@ -570,7 +570,7 @@ async function exportWorkspaceSnapshot(
     workspaceName,
     builtInVariableTypes: snapshot.builtInVariables
       .map((v) => v.type)
-      .filter((v): v is string => typeof v === "string" && v.trim().length)
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
       .sort((a, b) => a.localeCompare(b)),
     folders: snapshot.folders.map((f) => normalizeForDiff(f)),
     tags: snapshot.tags.map((t) => normalizeForDiff(t)),
