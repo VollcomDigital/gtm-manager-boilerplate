@@ -18,12 +18,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function getStringField(value: unknown, field: "name" | "key"): string | undefined {
-  if (!isRecord(value)) return undefined;
-  const v = value[field];
-  return typeof v === "string" && v.trim().length ? v : undefined;
-}
-
 /**
  * Removes server-managed / environment-specific keys from a GTM API object.
  *
