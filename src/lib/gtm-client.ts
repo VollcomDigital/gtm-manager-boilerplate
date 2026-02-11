@@ -5,10 +5,12 @@ import {
   zGtmTag,
   zGtmTrigger,
   zGtmVariable,
+  zGtmZone,
   type GtmCustomTemplate,
   type GtmTag,
   type GtmTrigger,
-  type GtmVariable
+  type GtmVariable,
+  type GtmZone
 } from "../types/gtm-schema";
 import type { Logger } from "./logger";
 import { isRetryableGoogleApiError, withRetry, type OperationKind, type RetryOptions } from "./retry";
@@ -654,6 +656,92 @@ export class GtmClient {
         requestBody: payload as unknown as tagmanager_v2.Schema$Variable
       })
     , "write");
+  }
+
+  // ----------------------------
+  // Zones
+  // ----------------------------
+  async listZones(workspacePath: string): Promise<tagmanager_v2.Schema$Zone[]> {
+    return await this.listAllPages("GTM zones.list", async (pageToken) => {
+      const data = await this.request("GTM zones.list", () =>
+        this.api.accounts.containers.workspaces.zones.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
+      );
+      return { items: data.zone ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async createZone(workspacePath: string, zone: GtmZone): Promise<tagmanager_v2.Schema$Zone> {
+    const payload = zGtmZone.parse(zone);
+    return await this.requestWithRetry(
+      "GTM zones.create",
+      () =>
+        this.api.accounts.containers.workspaces.zones.create({
+          parent: workspacePath,
+          requestBody: payload as unknown as tagmanager_v2.Schema$Zone
+        }),
+      "write"
+    );
+  }
+
+  async getZone(zonePath: string): Promise<tagmanager_v2.Schema$Zone> {
+    return await this.request("GTM zones.get", () =>
+      this.api.accounts.containers.workspaces.zones.get({ path: zonePath })
+    );
+  }
+
+  async getZoneById(workspacePath: string, zoneId: string): Promise<tagmanager_v2.Schema$Zone> {
+    return await this.getZone(this.childPath(workspacePath, "zones", zoneId));
+  }
+
+  async updateZone(
+    zonePath: string,
+    zone: GtmZone,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Zone> {
+    const payload = zGtmZone.parse(zone);
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Zone; fingerprint?: string } = {
+      path: zonePath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Zone
+    };
+    if (options.fingerprint) params.fingerprint = options.fingerprint;
+
+    return await this.requestWithRetry("GTM zones.update", () => this.api.accounts.containers.workspaces.zones.update(params), "write");
+  }
+
+  async updateZoneById(
+    workspacePath: string,
+    zoneId: string,
+    zone: GtmZone,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Zone> {
+    return await this.updateZone(this.childPath(workspacePath, "zones", zoneId), zone, options);
+  }
+
+  async deleteZone(zonePath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM zones.delete",
+      () => this.api.accounts.containers.workspaces.zones.delete({ path: zonePath }),
+      "write"
+    );
+  }
+
+  async deleteZoneById(workspacePath: string, zoneId: string): Promise<void> {
+    await this.deleteZone(this.childPath(workspacePath, "zones", zoneId));
+  }
+
+  async findZoneByName(workspacePath: string, zoneName: string): Promise<tagmanager_v2.Schema$Zone | undefined> {
+    const zones = await this.listZones(workspacePath);
+    return zones.find((z) => (z.name ?? "").toLowerCase() === zoneName.toLowerCase());
+  }
+
+  async getZoneByName(workspacePath: string, zoneName: string): Promise<tagmanager_v2.Schema$Zone> {
+    const match = await this.findZoneByName(workspacePath, zoneName);
+    if (!match) {
+      throw new Error(`Zone not found in workspace (${workspacePath}): name="${zoneName}"`);
+    }
+    return match;
   }
 
   async getVariable(variablePath: string): Promise<tagmanager_v2.Schema$Variable> {

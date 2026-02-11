@@ -120,3 +120,53 @@ export const zGtmCustomTemplate = z
   })
   .passthrough();
 
+/**
+ * Minimal GTM API v2 Zone representation (subset).
+ *
+ * Zones are commonly associated with GTM 360 features, but the API surface
+ * exists in v2: `/workspaces/zones`.
+ *
+ * Reference: https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/zones
+ */
+export interface GtmZoneBoundary {
+  condition?: unknown[];
+  customEvaluationTriggerId?: string[];
+
+  /**
+   * IaC-only convenience field; will be resolved to `customEvaluationTriggerId`
+   * during sync.
+   */
+  customEvaluationTriggerNames?: string[];
+
+  [key: string]: unknown;
+}
+
+export interface GtmZone {
+  zoneId?: string;
+  name: string;
+  notes?: string;
+  boundary?: GtmZoneBoundary;
+  childContainer?: unknown[];
+  typeRestriction?: unknown;
+  [key: string]: unknown;
+}
+
+export const zGtmZoneBoundary = z
+  .object({
+    condition: z.array(z.unknown()).optional(),
+    customEvaluationTriggerId: z.array(z.string().min(1)).optional(),
+    customEvaluationTriggerNames: z.array(z.string().min(1)).optional()
+  })
+  .passthrough();
+
+export const zGtmZone = z
+  .object({
+    zoneId: z.string().min(1).optional(),
+    name: z.string().min(1),
+    notes: z.string().optional(),
+    boundary: zGtmZoneBoundary.optional(),
+    childContainer: z.array(z.unknown()).optional(),
+    typeRestriction: z.unknown().optional()
+  })
+  .passthrough();
+
