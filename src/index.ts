@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { z } from "zod";
 import { createGoogleAuth } from "./config/auth";
-import { GtmClient } from "./lib/gtm-client";
+import { GtmClient, type AccountContainerLocator } from "./lib/gtm-client";
 import type { GtmTag, GtmTrigger } from "./types/gtm-schema";
 
 const EnvSchema = z
@@ -34,12 +34,14 @@ async function main(): Promise<void> {
   const auth = createGoogleAuth();
   const gtm = new GtmClient(auth);
 
-  const { accountId, containerId, containerPublicId, containerName } = await gtm.resolveAccountAndContainer({
-    accountId: env.GTM_ACCOUNT_ID,
-    accountName: env.GTM_ACCOUNT_NAME,
-    containerId: env.GTM_CONTAINER_ID,
-    containerName: env.GTM_CONTAINER_NAME
-  });
+  const locator: AccountContainerLocator = {
+    ...(env.GTM_ACCOUNT_ID ? { accountId: env.GTM_ACCOUNT_ID } : {}),
+    ...(env.GTM_ACCOUNT_NAME ? { accountName: env.GTM_ACCOUNT_NAME } : {}),
+    ...(env.GTM_CONTAINER_ID ? { containerId: env.GTM_CONTAINER_ID } : {}),
+    ...(env.GTM_CONTAINER_NAME ? { containerName: env.GTM_CONTAINER_NAME } : {})
+  };
+
+  const { accountId, containerId, containerPublicId, containerName } = await gtm.resolveAccountAndContainer(locator);
 
   const containerPath = gtm.toContainerPath(accountId, containerId);
   console.log(`Resolved container: accountId=${accountId}, containerId=${containerId}, publicId=${containerPublicId ?? "?"}, name=${containerName ?? "?"}`);

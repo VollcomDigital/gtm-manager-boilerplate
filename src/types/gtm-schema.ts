@@ -14,7 +14,7 @@ export interface GtmParameter {
   map?: GtmParameter[];
 }
 
-export const zGtmParameter: z.ZodType<GtmParameter> = z.lazy(() =>
+export const zGtmParameter = z.lazy(() =>
   z
     .object({
       type: z.string().min(1).optional(),
@@ -41,7 +41,7 @@ export interface GtmTag {
   [key: string]: unknown;
 }
 
-export const zGtmTag: z.ZodType<GtmTag> = z
+export const zGtmTag = z
   .object({
     tagId: z.string().min(1).optional(),
     name: z.string().min(1),
@@ -67,7 +67,7 @@ export interface GtmTrigger {
   [key: string]: unknown;
 }
 
-export const zGtmTrigger: z.ZodType<GtmTrigger> = z
+export const zGtmTrigger = z
   .object({
     triggerId: z.string().min(1).optional(),
     name: z.string().min(1),
@@ -91,7 +91,7 @@ export interface GtmVariable {
   [key: string]: unknown;
 }
 
-export const zGtmVariable: z.ZodType<GtmVariable> = z
+export const zGtmVariable = z
   .object({
     variableId: z.string().min(1).optional(),
     name: z.string().min(1),

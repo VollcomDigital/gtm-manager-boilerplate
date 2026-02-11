@@ -190,13 +190,28 @@ export class GtmClient {
     }
 
     const account = (await this.listAccounts()).find((a) => a.accountId === accountId);
-    return {
+
+    const resolved: ResolvedAccountContainer = {
       accountId,
-      containerId: container.containerId,
-      accountName: account?.name ?? locator.accountName,
-      containerName: container.name ?? locator.containerName,
-      containerPublicId: container.publicId ?? locator.containerPublicId
+      containerId: container.containerId
     };
+
+    const accountName = account?.name ?? locator.accountName;
+    if (accountName) {
+      resolved.accountName = accountName;
+    }
+
+    const containerName = container.name ?? locator.containerName;
+    if (containerName) {
+      resolved.containerName = containerName;
+    }
+
+    const containerPublicId = container.publicId ?? locator.containerPublicId;
+    if (containerPublicId) {
+      resolved.containerPublicId = containerPublicId;
+    }
+
+    return resolved;
   }
 
   /**
@@ -254,10 +269,9 @@ export class GtmClient {
   async listTags(workspacePath: string): Promise<tagmanager_v2.Schema$Tag[]> {
     return await this.listAllPages("GTM tags.list", async (pageToken) => {
       const data = await this.request("GTM tags.list", () =>
-        this.api.accounts.containers.workspaces.tags.list({
-          parent: workspacePath,
-          pageToken
-        })
+        this.api.accounts.containers.workspaces.tags.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
       );
       return { items: data.tag ?? [], nextPageToken: data.nextPageToken };
     });
@@ -279,10 +293,9 @@ export class GtmClient {
   async listTriggers(workspacePath: string): Promise<tagmanager_v2.Schema$Trigger[]> {
     return await this.listAllPages("GTM triggers.list", async (pageToken) => {
       const data = await this.request("GTM triggers.list", () =>
-        this.api.accounts.containers.workspaces.triggers.list({
-          parent: workspacePath,
-          pageToken
-        })
+        this.api.accounts.containers.workspaces.triggers.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
       );
       return { items: data.trigger ?? [], nextPageToken: data.nextPageToken };
     });
@@ -304,10 +317,9 @@ export class GtmClient {
   async listVariables(workspacePath: string): Promise<tagmanager_v2.Schema$Variable[]> {
     return await this.listAllPages("GTM variables.list", async (pageToken) => {
       const data = await this.request("GTM variables.list", () =>
-        this.api.accounts.containers.workspaces.variables.list({
-          parent: workspacePath,
-          pageToken
-        })
+        this.api.accounts.containers.workspaces.variables.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
       );
       return { items: data.variable ?? [], nextPageToken: data.nextPageToken };
     });
