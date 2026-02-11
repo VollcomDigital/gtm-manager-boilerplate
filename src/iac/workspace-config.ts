@@ -37,3 +37,21 @@ export const zWorkspaceDesiredStatePartial = z
 
 export type WorkspaceDesiredStatePartial = z.infer<typeof zWorkspaceDesiredStatePartial>;
 
+/**
+ * Overlay schema where workspaceName is optional.
+ *
+ * Used for repo-level overlays where workspaceName may be inherited from base
+ * config or repo defaults.
+ */
+export const zWorkspaceDesiredStateOverlay = z
+  .object({
+    workspaceName: z.string().trim().min(1).optional(),
+    tags: z.array(zGtmTag).optional(),
+    triggers: z.array(zGtmTrigger).optional(),
+    variables: z.array(zGtmVariable).optional(),
+    templates: z.array(zGtmCustomTemplate).optional()
+  })
+  .strict();
+
+export type WorkspaceDesiredStateOverlay = z.infer<typeof zWorkspaceDesiredStateOverlay>;
+

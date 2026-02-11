@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { zWorkspaceDesiredState, zWorkspaceDesiredStatePartial } from "./workspace-config";
+import { zWorkspaceDesiredState, zWorkspaceDesiredStateOverlay } from "./workspace-config";
 
 export const zLabels = z.record(z.string().min(1), z.string().min(1)).default({});
 
@@ -73,7 +73,7 @@ export const zRepoContainerPartial = z
     labels: zLabels.optional(),
     description: z.string().trim().min(1).optional(),
     target: zContainerTargetPartial.optional(),
-    workspace: zWorkspaceDesiredStatePartial.optional()
+    workspace: zWorkspaceDesiredStateOverlay.optional()
   })
   .strict();
 
