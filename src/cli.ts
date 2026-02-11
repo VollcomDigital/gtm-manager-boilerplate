@@ -2,6 +2,7 @@ import "dotenv/config";
 import { z } from "zod";
 import { createGoogleAuth } from "./config/auth";
 import { GtmClient, type AccountContainerLocator } from "./lib/gtm-client";
+import { createLogger, type LogLevel } from "./lib/logger";
 
 type FlagValue = string | boolean;
 
@@ -68,6 +69,8 @@ Commands:
   list-workspaces --account-id <id> --container-id <id|GTM-XXXX> [--json]
   create-version --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--version-name <name>] [--notes <text>] [--json]
   publish-version --version-path <accounts/.../containers/.../versions/...> [--json]
+  delete-workspace --workspace-path <accounts/.../containers/.../workspaces/...> --confirm
+  reset-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --confirm [--json]
 
 Examples:
   npm run cli -- list-accounts --json
@@ -76,6 +79,8 @@ Examples:
   npm run cli -- list-workspaces --account-id 1234567890 --container-id 51955729 --json
   npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --version-name "IaC Release" --notes "Automated publish" --json
   npm run cli -- publish-version --version-path accounts/123/containers/456/versions/7 --json
+  npm run cli -- delete-workspace --workspace-path accounts/123/containers/456/workspaces/999 --confirm
+  npm run cli -- reset-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --confirm --json
 `);
 }
 
@@ -187,6 +192,42 @@ async function publishVersion(gtm: GtmClient, containerVersionPath: string, asJs
   console.log(`published versionId=${versionId}\tname=${versionName}\tpath=${versionPath}`);
 }
 
+async function deleteWorkspace(gtm: GtmClient, workspacePath: string): Promise<void> {
+  await gtm.deleteWorkspace(workspacePath);
+  console.log(`deleted workspace path=${workspacePath}`);
+}
+
+async function resetWorkspace(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  workspaceName: string,
+  asJson: boolean
+): Promise<void> {
+  if (workspaceName.toLowerCase() === "default workspace") {
+    throw new Error("Refusing to reset the Default Workspace.");
+  }
+
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+
+  const workspaces = await gtm.listWorkspaces(containerPath);
+  const existing = workspaces.find((w) => (w.name ?? "").toLowerCase() === workspaceName.toLowerCase());
+  if (existing) {
+    const workspacePath =
+      existing.path ?? (existing.workspaceId ? gtm.toWorkspacePath(accountId, containerId, existing.workspaceId) : undefined);
+    if (workspacePath) {
+      await gtm.deleteWorkspace(workspacePath);
+    }
+  }
+
+  const created = await gtm.createWorkspace(containerPath, workspaceName);
+  if (asJson) {
+    console.log(JSON.stringify(created, null, 2));
+    return;
+  }
+  console.log(`workspaceId=${created.workspaceId ?? "?"}\tname=${created.name ?? "?"}`);
+}
+
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.command || parsed.flags.help === true) {
@@ -195,7 +236,11 @@ async function main(): Promise<void> {
   }
 
   const auth = createGoogleAuth();
-  const gtm = new GtmClient(auth);
+  const logger = createLogger({
+    level: (process.env.LOG_LEVEL as LogLevel | undefined) ?? "info",
+    format: process.env.LOG_FORMAT === "json" ? "json" : "pretty"
+  });
+  const gtm = new GtmClient(auth, { logger });
 
   const asJson = isJsonFlagSet(parsed.flags);
 
@@ -314,6 +359,50 @@ async function main(): Promise<void> {
       });
 
       await publishVersion(gtm, args.versionPath, asJson);
+      return;
+    }
+    case "delete-workspace": {
+      const schema = z
+        .object({
+          workspacePath: z.string().min(1),
+          confirm: z.literal(true)
+        })
+        .strict();
+
+      const args = schema.parse({
+        workspacePath: getStringFlag(parsed.flags, "workspace-path"),
+        confirm: parsed.flags.confirm === true || parsed.flags.yes === true
+      });
+
+      await deleteWorkspace(gtm, args.workspacePath);
+      return;
+    }
+    case "reset-workspace": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1),
+          workspaceName: z.string().min(1),
+          confirm: z.literal(true)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id"),
+        workspaceName: getStringFlag(parsed.flags, "workspace-name"),
+        confirm: parsed.flags.confirm === true || parsed.flags.yes === true
+      });
+
+      await resetWorkspace(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
+        args.workspaceName,
+        asJson
+      );
       return;
     }
     default: {
