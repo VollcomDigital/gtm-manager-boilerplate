@@ -1,6 +1,21 @@
 import { google, type tagmanager_v2 } from "googleapis";
 import type { GoogleAuth } from "google-auth-library";
-import { zGtmTag, zGtmTrigger, zGtmVariable, type GtmTag, type GtmTrigger, type GtmVariable } from "../types/gtm-schema";
+import {
+  zGtmCustomTemplate,
+  zGtmTag,
+  zGtmTrigger,
+  zGtmVariable,
+  type GtmCustomTemplate,
+  type GtmTag,
+  type GtmTrigger,
+  type GtmVariable
+} from "../types/gtm-schema";
+import { isRetryableGoogleApiError, withRetry, type OperationKind } from "./retry";
+
+const READ_RETRIES = 4;
+const WRITE_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 250;
+const RETRY_MAX_DELAY_MS = 8_000;
 
 export interface AccountContainerLocator {
   /**
@@ -64,6 +79,14 @@ export class GtmClient {
     return `accounts/${accountId}/containers/${containerId}/workspaces/${workspaceId}`;
   }
 
+  private normalizePath(p: string): string {
+    return p.replace(/\/+$/, "");
+  }
+
+  private childPath(parent: string, resource: string, id: string): string {
+    return `${this.normalizePath(parent)}/${resource}/${id}`;
+  }
+
   private formatError(err: unknown): string {
     if (!err || typeof err !== "object") {
       return String(err);
@@ -120,9 +143,26 @@ export class GtmClient {
   }
 
   private async request<T>(context: string, fn: () => Promise<{ data: T }>): Promise<T> {
+    return await this.requestWithRetry(context, fn, "read");
+  }
+
+  private async requestWithRetry<T>(
+    context: string,
+    fn: () => Promise<{ data: T }>,
+    operationKind: OperationKind
+  ): Promise<T> {
     try {
-      const res = await fn();
-      return res.data;
+      const retries = operationKind === "read" ? READ_RETRIES : WRITE_RETRIES;
+      return await withRetry(async () => {
+        const res = await fn();
+        return res.data;
+      }, {
+        retries,
+        baseDelayMs: RETRY_BASE_DELAY_MS,
+        maxDelayMs: RETRY_MAX_DELAY_MS,
+        jitter: true,
+        shouldRetry: isRetryableGoogleApiError
+      });
     } catch (err: unknown) {
       throw new Error(`${context} failed: ${this.formatError(err)}`);
     }
@@ -237,13 +277,74 @@ export class GtmClient {
       return match;
     }
 
-    return await this.request("GTM workspaces.create", () =>
+    return await this.requestWithRetry("GTM workspaces.create", () =>
       this.api.accounts.containers.workspaces.create({
         parent,
         requestBody: {
           name: params.workspaceName
         }
       })
+    , "write");
+  }
+
+  async listWorkspaces(containerPath: string): Promise<tagmanager_v2.Schema$Workspace[]> {
+    const data = await this.request("GTM workspaces.list", () =>
+      this.api.accounts.containers.workspaces.list({ parent: containerPath })
+    );
+    return data.workspace ?? [];
+  }
+
+  async getWorkspace(workspacePath: string): Promise<tagmanager_v2.Schema$Workspace> {
+    return await this.request("GTM workspaces.get", () =>
+      this.api.accounts.containers.workspaces.get({ path: workspacePath })
+    );
+  }
+
+  async deleteWorkspace(workspacePath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM workspaces.delete",
+      () => this.api.accounts.containers.workspaces.delete({ path: workspacePath }),
+      "write"
+    );
+  }
+
+  /**
+   * Creates a new container version from the given workspace.
+   *
+   * Note: version creation may sync the workspace against the latest container
+   * version first; inspect the response's `syncStatus`.
+   */
+  async createContainerVersionFromWorkspace(
+    workspacePath: string,
+    options: { name?: string; notes?: string } = {}
+  ): Promise<tagmanager_v2.Schema$CreateContainerVersionResponse> {
+    const requestBody: tagmanager_v2.Schema$CreateContainerVersionRequestVersionOptions = {};
+    if (options.name) requestBody.name = options.name;
+    if (options.notes) requestBody.notes = options.notes;
+
+    return await this.requestWithRetry(
+      "GTM workspaces.create_version",
+      () =>
+        this.api.accounts.containers.workspaces.create_version({
+          path: workspacePath,
+          requestBody
+        }),
+      "write"
+    );
+  }
+
+  /**
+   * Publishes a container version.
+   *
+   * @param containerVersionPath API path: `accounts/{accountId}/containers/{containerId}/versions/{versionId}`
+   */
+  async publishContainerVersion(
+    containerVersionPath: string
+  ): Promise<tagmanager_v2.Schema$PublishContainerVersionResponse> {
+    return await this.requestWithRetry(
+      "GTM versions.publish",
+      () => this.api.accounts.containers.versions.publish({ path: containerVersionPath }),
+      "write"
     );
   }
 
@@ -279,12 +380,76 @@ export class GtmClient {
 
   async createTag(workspacePath: string, tag: GtmTag): Promise<tagmanager_v2.Schema$Tag> {
     const payload = zGtmTag.parse(tag);
-    return await this.request("GTM tags.create", () =>
+    return await this.requestWithRetry("GTM tags.create", () =>
       this.api.accounts.containers.workspaces.tags.create({
         parent: workspacePath,
         requestBody: payload as unknown as tagmanager_v2.Schema$Tag
       })
-    );
+    , "write");
+  }
+
+  async getTag(tagPath: string): Promise<tagmanager_v2.Schema$Tag> {
+    return await this.request("GTM tags.get", () => this.api.accounts.containers.workspaces.tags.get({ path: tagPath }));
+  }
+
+  async updateTag(
+    tagPath: string,
+    tag: GtmTag,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Tag> {
+    const payload = zGtmTag.parse(tag);
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Tag; fingerprint?: string } = {
+      path: tagPath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Tag
+    };
+    if (options.fingerprint) {
+      params.fingerprint = options.fingerprint;
+    }
+
+    return await this.requestWithRetry("GTM tags.update", () => this.api.accounts.containers.workspaces.tags.update(params), "write");
+  }
+
+  async deleteTag(tagPath: string): Promise<void> {
+    await this.requestWithRetry("GTM tags.delete", () => this.api.accounts.containers.workspaces.tags.delete({ path: tagPath }), "write");
+  }
+
+  async findTagByName(workspacePath: string, tagName: string): Promise<tagmanager_v2.Schema$Tag | undefined> {
+    const tags = await this.listTags(workspacePath);
+    return tags.find((t) => (t.name ?? "").toLowerCase() === tagName.toLowerCase());
+  }
+
+  async getTagByName(workspacePath: string, tagName: string): Promise<tagmanager_v2.Schema$Tag> {
+    const match = await this.findTagByName(workspacePath, tagName);
+    if (!match) {
+      throw new Error(`Tag not found in workspace (${workspacePath}): name="${tagName}"`);
+    }
+    return match;
+  }
+
+  async getOrCreateTag(workspacePath: string, tag: GtmTag): Promise<tagmanager_v2.Schema$Tag> {
+    const existing = await this.findTagByName(workspacePath, tag.name);
+    if (existing) return existing;
+    return await this.createTag(workspacePath, tag);
+  }
+
+  async upsertTagByName(
+    workspacePath: string,
+    tag: GtmTag,
+    options: { updateIfExists?: boolean } = {}
+  ): Promise<tagmanager_v2.Schema$Tag> {
+    const existing = await this.findTagByName(workspacePath, tag.name);
+    if (!existing) {
+      return await this.createTag(workspacePath, tag);
+    }
+    if (!options.updateIfExists) {
+      return existing;
+    }
+    if (!existing.tagId) {
+      throw new Error(`Cannot update tag without tagId (name="${tag.name}").`);
+    }
+    const tagPath = this.childPath(workspacePath, "tags", existing.tagId);
+    const updateOptions = existing.fingerprint ? { fingerprint: existing.fingerprint } : {};
+    return await this.updateTag(tagPath, tag, updateOptions);
   }
 
   // ----------------------------
@@ -303,12 +468,86 @@ export class GtmClient {
 
   async createTrigger(workspacePath: string, trigger: GtmTrigger): Promise<tagmanager_v2.Schema$Trigger> {
     const payload = zGtmTrigger.parse(trigger);
-    return await this.request("GTM triggers.create", () =>
+    return await this.requestWithRetry("GTM triggers.create", () =>
       this.api.accounts.containers.workspaces.triggers.create({
         parent: workspacePath,
         requestBody: payload as unknown as tagmanager_v2.Schema$Trigger
       })
+    , "write");
+  }
+
+  async getTrigger(triggerPath: string): Promise<tagmanager_v2.Schema$Trigger> {
+    return await this.request("GTM triggers.get", () =>
+      this.api.accounts.containers.workspaces.triggers.get({ path: triggerPath })
     );
+  }
+
+  async updateTrigger(
+    triggerPath: string,
+    trigger: GtmTrigger,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Trigger> {
+    const payload = zGtmTrigger.parse(trigger);
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Trigger; fingerprint?: string } = {
+      path: triggerPath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Trigger
+    };
+    if (options.fingerprint) {
+      params.fingerprint = options.fingerprint;
+    }
+
+    return await this.requestWithRetry(
+      "GTM triggers.update",
+      () => this.api.accounts.containers.workspaces.triggers.update(params),
+      "write"
+    );
+  }
+
+  async deleteTrigger(triggerPath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM triggers.delete",
+      () => this.api.accounts.containers.workspaces.triggers.delete({ path: triggerPath }),
+      "write"
+    );
+  }
+
+  async findTriggerByName(workspacePath: string, triggerName: string): Promise<tagmanager_v2.Schema$Trigger | undefined> {
+    const triggers = await this.listTriggers(workspacePath);
+    return triggers.find((t) => (t.name ?? "").toLowerCase() === triggerName.toLowerCase());
+  }
+
+  async getTriggerByName(workspacePath: string, triggerName: string): Promise<tagmanager_v2.Schema$Trigger> {
+    const match = await this.findTriggerByName(workspacePath, triggerName);
+    if (!match) {
+      throw new Error(`Trigger not found in workspace (${workspacePath}): name="${triggerName}"`);
+    }
+    return match;
+  }
+
+  async getOrCreateTrigger(workspacePath: string, trigger: GtmTrigger): Promise<tagmanager_v2.Schema$Trigger> {
+    const existing = await this.findTriggerByName(workspacePath, trigger.name);
+    if (existing) return existing;
+    return await this.createTrigger(workspacePath, trigger);
+  }
+
+  async upsertTriggerByName(
+    workspacePath: string,
+    trigger: GtmTrigger,
+    options: { updateIfExists?: boolean } = {}
+  ): Promise<tagmanager_v2.Schema$Trigger> {
+    const existing = await this.findTriggerByName(workspacePath, trigger.name);
+    if (!existing) {
+      return await this.createTrigger(workspacePath, trigger);
+    }
+    if (!options.updateIfExists) {
+      return existing;
+    }
+    if (!existing.triggerId) {
+      throw new Error(`Cannot update trigger without triggerId (name="${trigger.name}").`);
+    }
+    const triggerPath = this.childPath(workspacePath, "triggers", existing.triggerId);
+    const updateOptions = existing.fingerprint ? { fingerprint: existing.fingerprint } : {};
+    return await this.updateTrigger(triggerPath, trigger, updateOptions);
   }
 
   // ----------------------------
@@ -327,12 +566,196 @@ export class GtmClient {
 
   async createVariable(workspacePath: string, variable: GtmVariable): Promise<tagmanager_v2.Schema$Variable> {
     const payload = zGtmVariable.parse(variable);
-    return await this.request("GTM variables.create", () =>
+    return await this.requestWithRetry("GTM variables.create", () =>
       this.api.accounts.containers.workspaces.variables.create({
         parent: workspacePath,
         requestBody: payload as unknown as tagmanager_v2.Schema$Variable
       })
+    , "write");
+  }
+
+  async getVariable(variablePath: string): Promise<tagmanager_v2.Schema$Variable> {
+    return await this.request("GTM variables.get", () =>
+      this.api.accounts.containers.workspaces.variables.get({ path: variablePath })
     );
+  }
+
+  async updateVariable(
+    variablePath: string,
+    variable: GtmVariable,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Variable> {
+    const payload = zGtmVariable.parse(variable);
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Variable; fingerprint?: string } = {
+      path: variablePath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Variable
+    };
+    if (options.fingerprint) {
+      params.fingerprint = options.fingerprint;
+    }
+
+    return await this.requestWithRetry(
+      "GTM variables.update",
+      () => this.api.accounts.containers.workspaces.variables.update(params),
+      "write"
+    );
+  }
+
+  async deleteVariable(variablePath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM variables.delete",
+      () => this.api.accounts.containers.workspaces.variables.delete({ path: variablePath }),
+      "write"
+    );
+  }
+
+  async findVariableByName(workspacePath: string, variableName: string): Promise<tagmanager_v2.Schema$Variable | undefined> {
+    const variables = await this.listVariables(workspacePath);
+    return variables.find((v) => (v.name ?? "").toLowerCase() === variableName.toLowerCase());
+  }
+
+  async getVariableByName(workspacePath: string, variableName: string): Promise<tagmanager_v2.Schema$Variable> {
+    const match = await this.findVariableByName(workspacePath, variableName);
+    if (!match) {
+      throw new Error(`Variable not found in workspace (${workspacePath}): name="${variableName}"`);
+    }
+    return match;
+  }
+
+  async getOrCreateVariable(workspacePath: string, variable: GtmVariable): Promise<tagmanager_v2.Schema$Variable> {
+    const existing = await this.findVariableByName(workspacePath, variable.name);
+    if (existing) return existing;
+    return await this.createVariable(workspacePath, variable);
+  }
+
+  async upsertVariableByName(
+    workspacePath: string,
+    variable: GtmVariable,
+    options: { updateIfExists?: boolean } = {}
+  ): Promise<tagmanager_v2.Schema$Variable> {
+    const existing = await this.findVariableByName(workspacePath, variable.name);
+    if (!existing) {
+      return await this.createVariable(workspacePath, variable);
+    }
+    if (!options.updateIfExists) {
+      return existing;
+    }
+    if (!existing.variableId) {
+      throw new Error(`Cannot update variable without variableId (name="${variable.name}").`);
+    }
+    const variablePath = this.childPath(workspacePath, "variables", existing.variableId);
+    const updateOptions = existing.fingerprint ? { fingerprint: existing.fingerprint } : {};
+    return await this.updateVariable(variablePath, variable, updateOptions);
+  }
+
+  // ----------------------------
+  // Custom Templates
+  // ----------------------------
+  async listTemplates(workspacePath: string): Promise<tagmanager_v2.Schema$CustomTemplate[]> {
+    return await this.listAllPages("GTM templates.list", async (pageToken) => {
+      const data = await this.request("GTM templates.list", () =>
+        this.api.accounts.containers.workspaces.templates.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
+      );
+      return { items: data.template ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async createTemplate(
+    workspacePath: string,
+    template: GtmCustomTemplate
+  ): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    const payload = zGtmCustomTemplate.parse(template);
+    return await this.requestWithRetry(
+      "GTM templates.create",
+      () =>
+        this.api.accounts.containers.workspaces.templates.create({
+          parent: workspacePath,
+          requestBody: payload as unknown as tagmanager_v2.Schema$CustomTemplate
+        }),
+      "write"
+    );
+  }
+
+  async getTemplate(templatePath: string): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    return await this.request("GTM templates.get", () =>
+      this.api.accounts.containers.workspaces.templates.get({ path: templatePath })
+    );
+  }
+
+  async updateTemplate(
+    templatePath: string,
+    template: GtmCustomTemplate,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    const payload = zGtmCustomTemplate.parse(template);
+    const params: { path: string; requestBody: tagmanager_v2.Schema$CustomTemplate; fingerprint?: string } = {
+      path: templatePath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$CustomTemplate
+    };
+    if (options.fingerprint) {
+      params.fingerprint = options.fingerprint;
+    }
+
+    return await this.requestWithRetry(
+      "GTM templates.update",
+      () => this.api.accounts.containers.workspaces.templates.update(params),
+      "write"
+    );
+  }
+
+  async deleteTemplate(templatePath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM templates.delete",
+      () => this.api.accounts.containers.workspaces.templates.delete({ path: templatePath }),
+      "write"
+    );
+  }
+
+  async findTemplateByName(
+    workspacePath: string,
+    templateName: string
+  ): Promise<tagmanager_v2.Schema$CustomTemplate | undefined> {
+    const templates = await this.listTemplates(workspacePath);
+    return templates.find((t) => (t.name ?? "").toLowerCase() === templateName.toLowerCase());
+  }
+
+  async getTemplateByName(workspacePath: string, templateName: string): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    const match = await this.findTemplateByName(workspacePath, templateName);
+    if (!match) {
+      throw new Error(`Custom template not found in workspace (${workspacePath}): name="${templateName}"`);
+    }
+    return match;
+  }
+
+  async getOrCreateTemplate(
+    workspacePath: string,
+    template: GtmCustomTemplate
+  ): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    const existing = await this.findTemplateByName(workspacePath, template.name);
+    if (existing) return existing;
+    return await this.createTemplate(workspacePath, template);
+  }
+
+  async upsertTemplateByName(
+    workspacePath: string,
+    template: GtmCustomTemplate,
+    options: { updateIfExists?: boolean } = {}
+  ): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    const existing = await this.findTemplateByName(workspacePath, template.name);
+    if (!existing) {
+      return await this.createTemplate(workspacePath, template);
+    }
+    if (!options.updateIfExists) {
+      return existing;
+    }
+    if (!existing.path) {
+      throw new Error(`Cannot update template without path (name="${template.name}").`);
+    }
+
+    const updateOptions = existing.fingerprint ? { fingerprint: existing.fingerprint } : {};
+    return await this.updateTemplate(existing.path, template, updateOptions);
   }
 }
 

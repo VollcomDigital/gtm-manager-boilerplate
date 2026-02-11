@@ -100,3 +100,23 @@ export const zGtmVariable = z
   })
   .passthrough();
 
+/**
+ * Minimal GTM API v2 Custom Template representation (subset).
+ *
+ * Reference: https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/templates#CustomTemplate
+ */
+export interface GtmCustomTemplate {
+  templateId?: string;
+  name: string;
+  templateData: string;
+  [key: string]: unknown;
+}
+
+export const zGtmCustomTemplate = z
+  .object({
+    templateId: z.string().min(1).optional(),
+    name: z.string().min(1),
+    templateData: z.string().min(1)
+  })
+  .passthrough();
+
