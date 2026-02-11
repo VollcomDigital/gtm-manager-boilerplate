@@ -190,9 +190,13 @@ export async function loadRepoConfig(configPathsCsv: string): Promise<RepoConfig
     }
   }
 
-  return finalizeRepoConfig({
-    defaults: workspaceNameDefault ? { workspaceName: workspaceNameDefault } : undefined,
+  const input: { containers: RepoContainerPartial[]; defaults?: { workspaceName?: string } } = {
     containers: [...mergedContainers.values()]
-  });
+  };
+  if (workspaceNameDefault) {
+    input.defaults = { workspaceName: workspaceNameDefault };
+  }
+
+  return finalizeRepoConfig(input);
 }
 
