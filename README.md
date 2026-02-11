@@ -178,6 +178,36 @@ npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --
 Optional:
 - Override scopes via `GTM_SCOPES` (comma/space-separated). This is useful for workspace deletion workflows, which typically require `https://www.googleapis.com/auth/tagmanager.delete.containers`.
 
+### IaC snapshot / diff / sync (Phase 3 scaffolding)
+```bash
+# Export a workspace snapshot (tags/triggers/variables/templates) in a stable JSON shape
+npm run cli -- export-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --out ./workspace.snapshot.json
+
+# Diff a workspace against a desired-state JSON file
+npm run cli -- diff-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --config ./desired.workspace.json --json
+
+# Fail non-zero if drift exists (useful for CI)
+npm run cli -- diff-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --config ./desired.workspace.json --fail-on-drift
+
+# Apply desired state (safe order: templates → variables → triggers → tags)
+npm run cli -- sync-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --config ./desired.workspace.json --dry-run --json
+```
+
+Notes:
+- `sync-workspace` supports resolving tag trigger references by **name** using `firingTriggerNames` / `blockingTriggerNames` in the desired tag object. These are IaC-only fields and are not part of the GTM API schema.
+
+### GitHub Actions: optional GTM diff on PRs
+This repo ships a `gtm-diff` workflow that is **skipped by default** unless you configure secrets/vars:
+- Secrets:
+  - `GTM_SERVICE_ACCOUNT_JSON_B64` (base64-encoded service-account JSON)
+  - `GTM_ACCOUNT_ID`
+  - `GTM_CONTAINER_ID`
+- Vars:
+  - `GTM_WORKSPACE_NAME` (default: `Automation-Test`)
+  - `GTM_DESIRED_CONFIG_PATH` (default: `desired.workspace.json`)
+
+When configured, PRs will run `diff-workspace --fail-on-drift` and upload `gtm.diff.json` as an artifact.
+
 ### Example automation script
 `src/index.ts` demonstrates:
 - authenticating

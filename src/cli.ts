@@ -98,6 +98,10 @@ Examples:
   npm run cli -- export-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --out ./workspace.snapshot.json
   npm run cli -- diff-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --json
   npm run cli -- sync-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --dry-run --json
+
+Diff flags:
+  --fail-on-drift   Exit non-zero when drift detected
+  --ignore-deletes  Ignore deletions when evaluating drift
 `);
 }
 
@@ -389,12 +393,29 @@ async function diffWorkspaceFromConfig(
   locator: AccountContainerLocator,
   workspaceName: string,
   configPath: string,
+  options: { failOnDrift: boolean; ignoreDeletes: boolean },
   asJson: boolean
 ): Promise<void> {
   const desired = await loadWorkspaceDesiredState(configPath);
   const { workspacePath } = await resolveWorkspacePathByName(gtm, locator, workspaceName);
   const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
   const diff = diffWorkspace(desired, snapshot);
+
+  if (options.ignoreDeletes) {
+    diff.tags.delete = [];
+    diff.triggers.delete = [];
+    diff.variables.delete = [];
+    diff.templates.delete = [];
+  }
+
+  const hasDrift = [diff.tags, diff.triggers, diff.variables, diff.templates].some(
+    (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
+  );
+
+  if (options.failOnDrift && hasDrift) {
+    process.exitCode = 2;
+  }
+
   const json = JSON.stringify(diff, null, 2);
 
   if (asJson) {
@@ -447,6 +468,8 @@ async function main(): Promise<void> {
   const asJson = isJsonFlagSet(parsed.flags);
   const dryRun = parsed.flags["dry-run"] === true || parsed.flags.dryRun === true;
   const deleteMissing = parsed.flags["delete-missing"] === true || parsed.flags.deleteMissing === true;
+  const failOnDrift = parsed.flags["fail-on-drift"] === true || parsed.flags.failOnDrift === true;
+  const ignoreDeletes = parsed.flags["ignore-deletes"] === true || parsed.flags.ignoreDeletes === true;
 
   switch (parsed.command) {
     case "list-accounts": {
@@ -666,6 +689,7 @@ async function main(): Promise<void> {
         },
         args.workspaceName,
         args.config,
+        { failOnDrift, ignoreDeletes },
         asJson
       );
       return;

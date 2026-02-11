@@ -106,7 +106,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Trigger IDs referenced by tags
   - [ ] Variable references inside tag parameters
 - [x] Implement idempotent upserts by name + stable identifiers
-- [ ] Add drift detection (current != desired) and fail CI when drift exists (optional policy)
+- [x] Add drift detection (current != desired) and fail CI when drift exists (optional policy)
 
 ---
 
@@ -117,7 +117,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Typecheck
   - [x] Lint
   - [x] Run unit tests
-- [ ] Add workflow to run “diff” on PRs and upload diff artifacts
+- [x] Add workflow to run “diff” on PRs and upload diff artifacts
 - [ ] Add workflow to run “sync” on main merges (protected environments)
 - [ ] Automate version creation + publishing:
   - [ ] Create container version from workspace

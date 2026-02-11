@@ -1,0 +1,61 @@
+name: gtm-diff
+
+on:
+  pull_request:
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+
+    # This job is intentionally skipped unless secrets are configured.
+    # See README for the recommended secret/env names.
+    if: ${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Write service account key
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
+          echo "Wrote gtm-service-account.json"
+
+      - name: GTM diff (workspace)
+        env:
+          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
+          GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
+          GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
+          GTM_WORKSPACE_NAME: ${{ vars.GTM_WORKSPACE_NAME }}
+          GTM_DESIRED_CONFIG_PATH: ${{ vars.GTM_DESIRED_CONFIG_PATH }}
+          LOG_FORMAT: json
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONFIG_PATH="${GTM_DESIRED_CONFIG_PATH:-desired.workspace.json}"
+          WORKSPACE_NAME="${GTM_WORKSPACE_NAME:-Automation-Test}"
+          npm run cli -- diff-workspace \
+            --account-id "$GTM_ACCOUNT_ID" \
+            --container-id "$GTM_CONTAINER_ID" \
+            --workspace-name "$WORKSPACE_NAME" \
+            --config "$CONFIG_PATH" \
+            --json \
+            --fail-on-drift \
+            > gtm.diff.json
+
+      - name: Upload diff artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtm-diff
+          path: gtm.diff.json
+
