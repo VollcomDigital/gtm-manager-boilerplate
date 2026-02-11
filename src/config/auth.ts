@@ -18,6 +18,8 @@ export const GTM_SCOPES: readonly string[] = [
 const EnvSchema = z.object({
   // Re-use the repo's existing env naming where possible.
   GTM_CREDENTIALS_PATH: z.string().trim().min(1).optional(),
+  // Optional override for scopes (comma/space-separated).
+  GTM_SCOPES: z.string().trim().min(1).optional(),
   // Standard Google env var supported by google-auth-library.
   GOOGLE_APPLICATION_CREDENTIALS: z.string().trim().min(1).optional()
 });
@@ -48,10 +50,18 @@ export interface CreateGoogleAuthOptions {
 export function createGoogleAuth(options: CreateGoogleAuthOptions = {}): GoogleAuth {
   const env = EnvSchema.parse({
     GTM_CREDENTIALS_PATH: process.env.GTM_CREDENTIALS_PATH,
+    GTM_SCOPES: process.env.GTM_SCOPES,
     GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS
   });
 
-  const scopes = options.scopes ?? GTM_SCOPES;
+  const scopesFromEnv = env.GTM_SCOPES
+    ? env.GTM_SCOPES
+        .split(/[,\s]+/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
+
+  const scopes = options.scopes ?? scopesFromEnv ?? GTM_SCOPES;
   const keyFilePathFromEnv = env.GTM_CREDENTIALS_PATH ?? env.GOOGLE_APPLICATION_CREDENTIALS;
   const keyFilePath = options.keyFilePath ?? keyFilePathFromEnv;
 

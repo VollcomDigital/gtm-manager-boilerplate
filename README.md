@@ -135,3 +135,53 @@ The hook set covers linting and formatting via Ruff (including import sorting an
 - Flesh out the manager/util modules with real GTM automation workflows (diff, sync, publish).
 - Add tests for the exporter and future automation logic; wire them into pre-commit or CI.
 - Extend the exporter to cover triggers, variables, or workspace snapshots if needed.
+
+---
+
+## TypeScript (Node.js) — GTM IaC scaffold (WIP)
+
+This repository also contains a **Node.js + TypeScript** scaffold for managing GTM via **GTM API v2** in an IaC style.
+
+### Install / build
+```bash
+npm install
+npm run typecheck
+npm run build
+```
+
+### Authentication (service account)
+1. In Google Cloud Console, create a **service account** and download a JSON key file.
+2. Enable the **Google Tag Manager API** for the project.
+3. In the GTM UI, add the **service account email** as a user on the relevant GTM Account/Container with at least:
+   - **Edit** permissions for workspace mutations
+   - **Publish** permissions if you want to publish container versions
+4. Configure env vars (see `.env.example`):
+   - `GTM_CREDENTIALS_PATH=/absolute/path/to/service_account.json`
+
+> Note: OAuth user flows are not wired up in the TypeScript scaffold yet; the current focus is CI-friendly service account auth.
+
+### CLI examples
+```bash
+# List GTM accounts accessible by the credential
+npm run cli -- list-accounts --json
+
+# List containers in an account
+npm run cli -- list-containers --account-id 1234567890 --json
+
+# Ensure a workspace exists (required for GTM API v2 mutations)
+npm run cli -- ensure-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --json
+
+# Create a container version from the workspace
+npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --version-name "IaC Release" --notes "Automated publish" --json
+```
+
+Optional:
+- Override scopes via `GTM_SCOPES` (comma/space-separated). This is useful for workspace deletion workflows, which typically require `https://www.googleapis.com/auth/tagmanager.delete.containers`.
+
+### Example automation script
+`src/index.ts` demonstrates:
+- authenticating
+- resolving a container
+- creating a workspace `Automation-Test`
+- creating an "All Pages" trigger
+- adding a basic GA4 Configuration tag into that workspace
