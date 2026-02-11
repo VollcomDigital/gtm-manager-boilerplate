@@ -1,8 +1,14 @@
 import "dotenv/config";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { createGoogleAuth } from "./config/auth";
 import { GtmClient, type AccountContainerLocator } from "./lib/gtm-client";
 import { createLogger, type LogLevel } from "./lib/logger";
+import { diffWorkspace } from "./iac/diff";
+import { loadWorkspaceDesiredState } from "./iac/load-config";
+import { stripDynamicFieldsDeep } from "./iac/normalize";
+import { fetchWorkspaceSnapshot } from "./iac/snapshot";
 
 type FlagValue = string | boolean;
 
@@ -75,6 +81,8 @@ Commands:
   publish-version --version-path <accounts/.../containers/.../versions/...> [--json]
   delete-workspace --workspace-path <accounts/.../containers/.../workspaces/...> --confirm
   reset-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --confirm [--json]
+  export-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--out <file>] [--json]
+  diff-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--json]
 
 Examples:
   npm run cli -- list-accounts --json
@@ -85,6 +93,8 @@ Examples:
   npm run cli -- publish-version --version-path accounts/123/containers/456/versions/7 --json
   npm run cli -- delete-workspace --workspace-path accounts/123/containers/456/workspaces/999 --confirm
   npm run cli -- reset-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --confirm --json
+  npm run cli -- export-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --out ./workspace.snapshot.json
+  npm run cli -- diff-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --json
 `);
 }
 
@@ -323,6 +333,75 @@ async function resetWorkspace(
   console.log(`workspaceId=${created.workspaceId ?? "?"}\tname=${created.name ?? "?"}`);
 }
 
+async function resolveWorkspacePathByName(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  workspaceName: string
+): Promise<{ accountId: string; containerId: string; containerPath: string; workspacePath: string }> {
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+  const workspaces = await gtm.listWorkspaces(containerPath);
+  const workspace = workspaces.find((w) => (w.name ?? "").toLowerCase() === workspaceName.toLowerCase());
+  if (!workspace?.workspaceId) {
+    throw new Error(`Workspace not found in container (${containerPath}): name="${workspaceName}"`);
+  }
+  const workspacePath = workspace.path ?? gtm.toWorkspacePath(accountId, containerId, workspace.workspaceId);
+  return { accountId, containerId, containerPath, workspacePath };
+}
+
+async function exportWorkspaceSnapshot(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  workspaceName: string,
+  outPath: string | undefined,
+  asJson: boolean
+): Promise<void> {
+  const { workspacePath } = await resolveWorkspacePathByName(gtm, locator, workspaceName);
+  const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
+
+  const desiredLike = {
+    workspaceName,
+    tags: snapshot.tags.map((t) => stripDynamicFieldsDeep(t)),
+    triggers: snapshot.triggers.map((t) => stripDynamicFieldsDeep(t)),
+    variables: snapshot.variables.map((v) => stripDynamicFieldsDeep(v)),
+    templates: snapshot.templates.map((t) => stripDynamicFieldsDeep(t))
+  };
+
+  const json = JSON.stringify(desiredLike, null, 2);
+
+  if (outPath) {
+    const resolved = path.isAbsolute(outPath) ? outPath : path.resolve(process.cwd(), outPath);
+    await fs.writeFile(resolved, json, "utf-8");
+    if (!asJson) {
+      console.log(`wrote ${resolved}`);
+    }
+    return;
+  }
+
+  console.log(json);
+}
+
+async function diffWorkspaceFromConfig(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  workspaceName: string,
+  configPath: string,
+  asJson: boolean
+): Promise<void> {
+  const desired = await loadWorkspaceDesiredState(configPath);
+  const { workspacePath } = await resolveWorkspacePathByName(gtm, locator, workspaceName);
+  const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
+  const diff = diffWorkspace(desired, snapshot);
+  const json = JSON.stringify(diff, null, 2);
+
+  if (asJson) {
+    console.log(json);
+    return;
+  }
+
+  console.log(json);
+}
+
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.command || parsed.flags.help === true) {
@@ -501,6 +580,64 @@ async function main(): Promise<void> {
         args.workspaceName,
         asJson,
         dryRun
+      );
+      return;
+    }
+    case "export-workspace": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1),
+          workspaceName: z.string().min(1),
+          out: z.string().min(1).optional()
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id"),
+        workspaceName: getStringFlag(parsed.flags, "workspace-name"),
+        out: getStringFlag(parsed.flags, "out")
+      });
+
+      await exportWorkspaceSnapshot(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
+        args.workspaceName,
+        args.out,
+        asJson
+      );
+      return;
+    }
+    case "diff-workspace": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1),
+          workspaceName: z.string().min(1),
+          config: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id"),
+        workspaceName: getStringFlag(parsed.flags, "workspace-name"),
+        config: getStringFlag(parsed.flags, "config")
+      });
+
+      await diffWorkspaceFromConfig(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
+        args.workspaceName,
+        args.config,
+        asJson
       );
       return;
     }
