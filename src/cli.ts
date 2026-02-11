@@ -9,6 +9,7 @@ import { diffWorkspace } from "./iac/diff";
 import { loadWorkspaceDesiredState } from "./iac/load-config";
 import { normalizeForDiff } from "./iac/normalize";
 import { fetchWorkspaceSnapshot } from "./iac/snapshot";
+import { syncWorkspace } from "./iac/sync";
 
 type FlagValue = string | boolean;
 
@@ -83,6 +84,7 @@ Commands:
   reset-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --confirm [--json]
   export-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--out <file>] [--json]
   diff-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--json]
+  sync-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--delete-missing --confirm] [--json]
 
 Examples:
   npm run cli -- list-accounts --json
@@ -95,6 +97,7 @@ Examples:
   npm run cli -- reset-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --confirm --json
   npm run cli -- export-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --out ./workspace.snapshot.json
   npm run cli -- diff-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --json
+  npm run cli -- sync-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --dry-run --json
 `);
 }
 
@@ -402,6 +405,31 @@ async function diffWorkspaceFromConfig(
   console.log(json);
 }
 
+async function syncWorkspaceFromConfig(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  workspaceName: string,
+  configPath: string,
+  opts: { deleteMissing: boolean; dryRun: boolean; updateExisting: boolean },
+  asJson: boolean
+): Promise<void> {
+  const desired = await loadWorkspaceDesiredState(configPath);
+  const { workspacePath } = await resolveWorkspacePathByName(gtm, locator, workspaceName);
+
+  const result = await syncWorkspace(gtm, workspacePath, desired, {
+    dryRun: opts.dryRun,
+    deleteMissing: opts.deleteMissing,
+    updateExisting: opts.updateExisting
+  });
+
+  const json = JSON.stringify(result, null, 2);
+  if (asJson) {
+    console.log(json);
+    return;
+  }
+  console.log(json);
+}
+
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.command || parsed.flags.help === true) {
@@ -418,6 +446,7 @@ async function main(): Promise<void> {
 
   const asJson = isJsonFlagSet(parsed.flags);
   const dryRun = parsed.flags["dry-run"] === true || parsed.flags.dryRun === true;
+  const deleteMissing = parsed.flags["delete-missing"] === true || parsed.flags.deleteMissing === true;
 
   switch (parsed.command) {
     case "list-accounts": {
@@ -637,6 +666,44 @@ async function main(): Promise<void> {
         },
         args.workspaceName,
         args.config,
+        asJson
+      );
+      return;
+    }
+    case "sync-workspace": {
+      const confirmFlag = parsed.flags.confirm === true || parsed.flags.yes === true;
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1),
+          workspaceName: z.string().min(1),
+          config: z.string().min(1),
+          confirm: z.literal(true)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id"),
+        workspaceName: getStringFlag(parsed.flags, "workspace-name"),
+        config: getStringFlag(parsed.flags, "config"),
+        // Require confirmation iff deleteMissing is set.
+        confirm: deleteMissing ? confirmFlag : true
+      });
+
+      await syncWorkspaceFromConfig(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
+        args.workspaceName,
+        args.config,
+        {
+          deleteMissing,
+          dryRun,
+          updateExisting: true
+        },
         asJson
       );
       return;
