@@ -8,6 +8,7 @@ import { createLogger, type LogLevel } from "./lib/logger";
 import { diffWorkspace } from "./iac/diff";
 import { sha256HexFromString } from "./iac/hash";
 import { loadWorkspaceDesiredState } from "./iac/load-config";
+import { loadRepoConfig } from "./iac/load-repo-config";
 import { normalizeForDiff } from "./iac/normalize";
 import { fetchWorkspaceSnapshot } from "./iac/snapshot";
 import { syncWorkspace } from "./iac/sync";
@@ -89,6 +90,8 @@ Commands:
   diff-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--json]
   sync-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--delete-missing --confirm] [--json]
   hash-config --config <file>
+  diff-repo --config <file[,overlay...]> [--container-keys a,b] [--labels k=v,k2=v2] [--json]
+  sync-repo --config <file[,overlay...]> [--container-keys a,b] [--labels k=v] [--delete-missing --confirm] [--publish --confirm] [--json]
 
 Examples:
   npm run cli -- list-accounts --json
@@ -105,6 +108,8 @@ Examples:
   npm run cli -- diff-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --json
   npm run cli -- sync-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --dry-run --json
   npm run cli -- hash-config --config ./desired.workspace.json --json
+  npm run cli -- diff-repo --config ./gtm.repo.yml --labels env=prod --fail-on-drift --json
+  npm run cli -- sync-repo --config ./gtm.repo.yml --container-keys site_a,site_b --dry-run --json
 
 Diff flags:
   --fail-on-drift   Exit non-zero when drift detected
@@ -118,6 +123,40 @@ Sync flags:
 function getStringFlag(flags: Record<string, FlagValue>, key: string): string | undefined {
   const v = flags[key];
   return typeof v === "string" && v.length ? v : undefined;
+}
+
+function parseCsv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function parseLabelsFilter(value: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const token of parseCsv(value)) {
+    const idx = token.indexOf("=");
+    if (idx < 0) {
+      throw new Error(`Invalid label filter "${token}" (expected key=value).`);
+    }
+    const k = token.slice(0, idx).trim();
+    const v = token.slice(idx + 1).trim();
+    if (!k || !v) {
+      throw new Error(`Invalid label filter "${token}" (expected key=value).`);
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
+function matchesLabels(labels: Record<string, string> | undefined, filter: Record<string, string>): boolean {
+  if (Object.keys(filter).length === 0) return true;
+  const l = labels ?? {};
+  for (const [k, v] of Object.entries(filter)) {
+    if (l[k] !== v) return false;
+  }
+  return true;
 }
 
 async function listAccounts(gtm: GtmClient, asJson: boolean): Promise<void> {
@@ -459,6 +498,95 @@ async function diffWorkspaceFromConfig(
   console.log(json);
 }
 
+async function diffRepoFromConfig(
+  gtm: GtmClient,
+  configPaths: string,
+  options: { containerKeys: string[]; labels: Record<string, string>; failOnDrift: boolean; ignoreDeletes: boolean },
+  asJson: boolean
+): Promise<void> {
+  const repo = await loadRepoConfig(configPaths);
+
+  const keysFilter = new Set(options.containerKeys.map((k) => k.toLowerCase()));
+
+  const selected = repo.containers.filter((c) => {
+    if (keysFilter.size && !keysFilter.has(c.key.toLowerCase())) return false;
+    return matchesLabels(c.labels ?? {}, options.labels);
+  });
+
+  const results: Array<{
+    key: string;
+    labels: Record<string, string>;
+    workspaceName: string;
+    workspacePath?: string;
+    diff?: unknown;
+    error?: string;
+  }> = [];
+
+  let hadError = false;
+  let hadDrift = false;
+
+  for (const c of selected) {
+    try {
+      const { accountId, containerId } = await gtm.resolveAccountAndContainer(c.target);
+      const ws = await gtm.getOrCreateWorkspace({
+        accountId,
+        containerId,
+        workspaceName: c.workspace.workspaceName
+      });
+      if (!ws.workspaceId) throw new Error("Workspace response missing workspaceId.");
+      const workspacePath = gtm.toWorkspacePath(accountId, containerId, ws.workspaceId);
+
+      const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
+      const diff = diffWorkspace(c.workspace, snapshot);
+      if (options.ignoreDeletes) {
+        diff.tags.delete = [];
+        diff.triggers.delete = [];
+        diff.variables.delete = [];
+        diff.templates.delete = [];
+      }
+
+      const drift = [diff.tags, diff.triggers, diff.variables, diff.templates].some(
+        (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
+      );
+      if (drift) hadDrift = true;
+
+      results.push({
+        key: c.key,
+        labels: c.labels ?? {},
+        workspaceName: c.workspace.workspaceName,
+        workspacePath,
+        diff
+      });
+    } catch (err: unknown) {
+      hadError = true;
+      results.push({
+        key: c.key,
+        labels: c.labels ?? {},
+        workspaceName: c.workspace.workspaceName,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+
+  if (options.failOnDrift && hadDrift) {
+    process.exitCode = 2;
+  }
+  if (hadError) {
+    process.exitCode = 1;
+  }
+
+  const payload = {
+    schemaVersion: repo.schemaVersion,
+    defaults: repo.defaults,
+    selectedCount: selected.length,
+    results
+  };
+
+  const json = JSON.stringify(payload, null, 2);
+  console.log(json);
+  if (!asJson) return;
+}
+
 async function syncWorkspaceFromConfig(
   gtm: GtmClient,
   locator: AccountContainerLocator,
@@ -483,6 +611,114 @@ async function syncWorkspaceFromConfig(
     return;
   }
   console.log(json);
+}
+
+async function syncRepoFromConfig(
+  gtm: GtmClient,
+  configPaths: string,
+  opts: {
+    containerKeys: string[];
+    labels: Record<string, string>;
+    deleteMissing: boolean;
+    dryRun: boolean;
+    validateVariableRefs: boolean;
+    publish: boolean;
+    versionName?: string;
+    notes?: string;
+  },
+  asJson: boolean
+): Promise<void> {
+  const repo = await loadRepoConfig(configPaths);
+  const keysFilter = new Set(opts.containerKeys.map((k) => k.toLowerCase()));
+
+  const selected = repo.containers.filter((c) => {
+    if (keysFilter.size && !keysFilter.has(c.key.toLowerCase())) return false;
+    return matchesLabels(c.labels ?? {}, opts.labels);
+  });
+
+  const results: Array<{
+    key: string;
+    labels: Record<string, string>;
+    workspacePath?: string;
+    sync?: unknown;
+    version?: { versionPath?: string; publishedPath?: string };
+    error?: string;
+  }> = [];
+
+  let hadError = false;
+
+  for (const c of selected) {
+    try {
+      const { accountId, containerId } = await gtm.resolveAccountAndContainer(c.target);
+      const ws = await gtm.getOrCreateWorkspace({
+        accountId,
+        containerId,
+        workspaceName: c.workspace.workspaceName
+      });
+      if (!ws.workspaceId) throw new Error("Workspace response missing workspaceId.");
+      const workspacePath = gtm.toWorkspacePath(accountId, containerId, ws.workspaceId);
+
+      const sync = await syncWorkspace(gtm, workspacePath, c.workspace, {
+        dryRun: opts.dryRun,
+        deleteMissing: opts.deleteMissing,
+        updateExisting: true,
+        validateVariableRefs: opts.validateVariableRefs
+      });
+
+      const r: {
+        key: string;
+        labels: Record<string, string>;
+        workspacePath?: string;
+        sync?: unknown;
+        version?: { versionPath?: string; publishedPath?: string };
+      } = {
+        key: c.key,
+        labels: c.labels ?? {},
+        workspacePath,
+        sync
+      };
+
+      if (opts.publish && !opts.dryRun) {
+        const created = await gtm.createContainerVersionFromWorkspace(workspacePath, {
+          name: opts.versionName,
+          notes: opts.notes
+        });
+        const versionPath = created.containerVersion?.path ?? undefined;
+        if (!versionPath) {
+          throw new Error("Version creation did not return containerVersion.path.");
+        }
+        const published = await gtm.publishContainerVersion(versionPath);
+        r.version = {
+          versionPath,
+          publishedPath: published.containerVersion?.path ?? versionPath
+        };
+      }
+
+      results.push(r);
+    } catch (err: unknown) {
+      hadError = true;
+      results.push({
+        key: c.key,
+        labels: c.labels ?? {},
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+
+  if (hadError) {
+    process.exitCode = 1;
+  }
+
+  const payload = {
+    schemaVersion: repo.schemaVersion,
+    defaults: repo.defaults,
+    selectedCount: selected.length,
+    results
+  };
+
+  const json = JSON.stringify(payload, null, 2);
+  console.log(json);
+  if (!asJson) return;
 }
 
 async function hashConfig(configPath: string, asJson: boolean): Promise<void> {
@@ -523,6 +759,8 @@ async function main(): Promise<void> {
   const ignoreDeletes = parsed.flags["ignore-deletes"] === true || parsed.flags.ignoreDeletes === true;
   const validateVariableRefs =
     parsed.flags["validate-variable-refs"] === true || parsed.flags.validateVariableRefs === true;
+  const publish = parsed.flags.publish === true;
+  const confirmFlag = parsed.flags.confirm === true || parsed.flags.yes === true;
 
   switch (parsed.command) {
     case "list-accounts": {
@@ -818,6 +1056,74 @@ async function main(): Promise<void> {
           dryRun,
           updateExisting: true,
           validateVariableRefs
+        },
+        asJson
+      );
+      return;
+    }
+    case "diff-repo": {
+      const schema = z
+        .object({
+          config: z.string().min(1),
+          containerKeys: z.string().optional(),
+          labels: z.string().optional()
+        })
+        .strict();
+
+      const args = schema.parse({
+        config: getStringFlag(parsed.flags, "config"),
+        containerKeys: getStringFlag(parsed.flags, "container-keys"),
+        labels: getStringFlag(parsed.flags, "labels")
+      });
+
+      await diffRepoFromConfig(
+        gtm,
+        args.config,
+        {
+          containerKeys: parseCsv(args.containerKeys),
+          labels: parseLabelsFilter(args.labels),
+          failOnDrift,
+          ignoreDeletes
+        },
+        asJson
+      );
+      return;
+    }
+    case "sync-repo": {
+      const schema = z
+        .object({
+          config: z.string().min(1),
+          containerKeys: z.string().optional(),
+          labels: z.string().optional(),
+          versionName: z.string().min(1).optional(),
+          notes: z.string().min(1).optional()
+        })
+        .strict();
+
+      const args = schema.parse({
+        config: getStringFlag(parsed.flags, "config"),
+        containerKeys: getStringFlag(parsed.flags, "container-keys"),
+        labels: getStringFlag(parsed.flags, "labels"),
+        versionName: getStringFlag(parsed.flags, "version-name"),
+        notes: getStringFlag(parsed.flags, "notes")
+      });
+
+      if ((deleteMissing || publish) && !dryRun && !confirmFlag) {
+        throw new Error("Refusing to mutate with deletions/publish without --confirm (or --yes).");
+      }
+
+      await syncRepoFromConfig(
+        gtm,
+        args.config,
+        {
+          containerKeys: parseCsv(args.containerKeys),
+          labels: parseLabelsFilter(args.labels),
+          deleteMissing,
+          dryRun,
+          validateVariableRefs,
+          publish,
+          versionName: args.versionName,
+          notes: args.notes
         },
         asJson
       );
