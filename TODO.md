@@ -130,3 +130,30 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Version the IaC tool (semantic releases)
   - [x] Generate changelogs
 
+---
+
+## Phase 5 — Extended Coverage (GTM Free + GTM 360) & Hardening
+
+### Expand GTM resource coverage (CRUD + diff/sync)
+- [ ] Folders (and optional folder membership management)
+- [ ] Environments (create/update/delete + promote publish flows)
+- [ ] Built-in variables (enable/disable + revert)
+- [x] Zones (GTM 360) — CRUD + diff/sync (already supported)
+- [ ] Server-side GTM: Clients (CRUD + diff/sync)
+- [ ] Server-side GTM: Transformations (CRUD + diff/sync)
+- [ ] User permissions / access reporting (read-only)
+
+### Drift model improvements
+- [ ] Diff desired state vs **live** published container version (not just workspace state)
+- [ ] Optional policy: block sync if live != desired unless `--force`
+
+### Safety / policy engine
+- [ ] Protected entities (never delete by name/label)
+- [ ] Allowlist/denylist by resource type (tags/triggers/vars/templates/zones/...)
+- [ ] Approval gates for destructive operations (deleteMissing + publish)
+
+### Testing & reliability
+- [ ] Integration-style tests with canned GTM API fixtures (diff/sync flows)
+- [ ] Contract tests for Zod schemas vs googleapis types (where feasible)
+- [ ] Rate-limit soak tests (retry/backoff validation)
+
