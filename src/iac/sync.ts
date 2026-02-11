@@ -3,6 +3,7 @@ import type { GtmClient } from "../lib/gtm-client";
 import type { GtmCustomTemplate, GtmTag, GtmTrigger, GtmVariable } from "../types/gtm-schema";
 import type { WorkspaceDesiredState } from "./workspace-config";
 import { matchesDesiredSubset } from "./diff";
+import { sha256HexFromString } from "./hash";
 import { normalizeForDiff, stripDynamicFieldsDeep } from "./normalize";
 import { fetchWorkspaceSnapshot } from "./snapshot";
 
@@ -168,6 +169,19 @@ export async function syncWorkspace(
   for (const dt of desired.templates) {
     const key = lower(dt.name);
     const existing = currentTemplatesByName.get(key);
+
+    // Optional: allow pinning templateData via a hash in config.
+    // If provided, we verify the content before applying changes.
+    if (isRecord(dt)) {
+      const expected = dt.__sha256;
+      if (typeof expected === "string" && expected.trim().length) {
+        const actual = sha256HexFromString(String(dt.templateData ?? ""));
+        if (actual !== expected.trim().toLowerCase()) {
+          throw new Error(`Template "${dt.name}" __sha256 mismatch (expected=${expected}, actual=${actual}).`);
+        }
+      }
+    }
+
     if (!existing) {
       res.templates.created.push(dt.name);
       if (!options.dryRun) {

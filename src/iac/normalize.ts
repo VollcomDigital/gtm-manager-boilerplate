@@ -34,7 +34,8 @@ export function stripDynamicFieldsDeep(value: unknown): unknown {
 
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) {
-    if (DYNAMIC_KEYS.has(k)) continue;
+    // `__*` keys are reserved for IaC metadata and must not be sent to the API.
+    if (DYNAMIC_KEYS.has(k) || k.startsWith("__")) continue;
     out[k] = stripDynamicFieldsDeep(v);
   }
   return out;

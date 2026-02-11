@@ -197,6 +197,7 @@ Notes:
 - `sync-workspace` supports resolving tag trigger references by **name** using `firingTriggerNames` / `blockingTriggerNames` in the desired tag object. These are IaC-only fields and are not part of the GTM API schema.
 - Config files can be **JSON or YAML** (`.json`, `.yml`, `.yaml`).
 - You can pass **overlays** by providing a comma-separated list to `--config`, e.g. `--config ./base.yml,./prod.yml` (later files override earlier ones by entity name).
+- Custom templates can optionally be pinned with `__sha256` (SHA-256 of `templateData`). Use `npm run cli -- hash-config --config <file> --json` to compute hashes.
 
 ### GitHub Actions: optional GTM diff on PRs
 This repo ships a `gtm-diff` workflow that is **skipped by default** unless you configure secrets/vars:

@@ -54,7 +54,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 - [x] Implement list/get/create/update/delete for:
   - [x] Tag templates
   - [x] Variable templates
-- [ ] Template versioning strategy (pin content hashes)
+- [x] Template versioning strategy (pin content hashes)
 
 ### Versioning & publishing (required to apply workspace edits)
 - [x] Create container version from workspace
@@ -63,7 +63,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ### Tests & safety checks
 - [ ] Unit tests for:
-  - [ ] Diff logic primitives (later reused in Phase 3)
+  - [x] Diff logic primitives (later reused in Phase 3)
   - [x] Name-based resolution
   - [x] Zod schema validations
 - [x] Add “dry-run” mode for all mutations

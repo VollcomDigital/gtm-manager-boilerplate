@@ -6,6 +6,7 @@ import { createGoogleAuth } from "./config/auth";
 import { GtmClient, type AccountContainerLocator } from "./lib/gtm-client";
 import { createLogger, type LogLevel } from "./lib/logger";
 import { diffWorkspace } from "./iac/diff";
+import { sha256HexFromString } from "./iac/hash";
 import { loadWorkspaceDesiredState } from "./iac/load-config";
 import { normalizeForDiff } from "./iac/normalize";
 import { fetchWorkspaceSnapshot } from "./iac/snapshot";
@@ -85,6 +86,7 @@ Commands:
   export-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--out <file>] [--json]
   diff-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--json]
   sync-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--delete-missing --confirm] [--json]
+  hash-config --config <file>
 
 Examples:
   npm run cli -- list-accounts --json
@@ -98,6 +100,7 @@ Examples:
   npm run cli -- export-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --out ./workspace.snapshot.json
   npm run cli -- diff-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --json
   npm run cli -- sync-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --dry-run --json
+  npm run cli -- hash-config --config ./desired.workspace.json --json
 
 Diff flags:
   --fail-on-drift   Exit non-zero when drift detected
@@ -451,6 +454,23 @@ async function syncWorkspaceFromConfig(
   console.log(json);
 }
 
+async function hashConfig(configPath: string, asJson: boolean): Promise<void> {
+  const desired = await loadWorkspaceDesiredState(configPath);
+  const templates = desired.templates.map((t) => ({
+    name: t.name,
+    sha256: sha256HexFromString(String((t as unknown as { templateData?: unknown }).templateData ?? ""))
+  }));
+
+  const out = { workspaceName: desired.workspaceName, templates };
+  const json = JSON.stringify(out, null, 2);
+  console.log(json);
+
+  if (!asJson) {
+    // Human-readable is currently identical JSON.
+    return;
+  }
+}
+
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.command || parsed.flags.help === true) {
@@ -730,6 +750,20 @@ async function main(): Promise<void> {
         },
         asJson
       );
+      return;
+    }
+    case "hash-config": {
+      const schema = z
+        .object({
+          config: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        config: getStringFlag(parsed.flags, "config")
+      });
+
+      await hashConfig(args.config, asJson);
       return;
     }
     default: {
