@@ -2,11 +2,13 @@ import { google, type tagmanager_v2 } from "googleapis";
 import type { GoogleAuth } from "google-auth-library";
 import {
   zGtmCustomTemplate,
+  zGtmFolder,
   zGtmTag,
   zGtmTrigger,
   zGtmVariable,
   zGtmZone,
   type GtmCustomTemplate,
+  type GtmFolder,
   type GtmTag,
   type GtmTrigger,
   type GtmVariable,
@@ -70,6 +72,26 @@ export class GtmClient {
   constructor(auth: GoogleAuth, options: { logger?: Logger } = {}) {
     this.api = google.tagmanager({ version: "v2", auth });
     this.logger = options.logger;
+  }
+
+  /**
+   * Removes IaC-only metadata keys (prefixed with "__") recursively.
+   *
+   * This prevents accidentally sending config-only fields to the GTM API.
+   */
+  private stripIacMetadataDeep<T>(value: T): T {
+    if (Array.isArray(value)) {
+      return value.map((v) => this.stripIacMetadataDeep(v)) as unknown as T;
+    }
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k.startsWith("__")) continue;
+      out[k] = this.stripIacMetadataDeep(v);
+    }
+    return out as unknown as T;
   }
 
   toAccountPath(accountId: string): string {
@@ -429,7 +451,7 @@ export class GtmClient {
   }
 
   async createTag(workspacePath: string, tag: GtmTag): Promise<tagmanager_v2.Schema$Tag> {
-    const payload = zGtmTag.parse(tag);
+    const payload = this.stripIacMetadataDeep(zGtmTag.parse(tag));
     return await this.requestWithRetry("GTM tags.create", () =>
       this.api.accounts.containers.workspaces.tags.create({
         parent: workspacePath,
@@ -451,7 +473,7 @@ export class GtmClient {
     tag: GtmTag,
     options: { fingerprint?: string } = {}
   ): Promise<tagmanager_v2.Schema$Tag> {
-    const payload = zGtmTag.parse(tag);
+    const payload = this.stripIacMetadataDeep(zGtmTag.parse(tag));
     const params: { path: string; requestBody: tagmanager_v2.Schema$Tag; fingerprint?: string } = {
       path: tagPath,
       requestBody: payload as unknown as tagmanager_v2.Schema$Tag
@@ -534,7 +556,7 @@ export class GtmClient {
   }
 
   async createTrigger(workspacePath: string, trigger: GtmTrigger): Promise<tagmanager_v2.Schema$Trigger> {
-    const payload = zGtmTrigger.parse(trigger);
+    const payload = this.stripIacMetadataDeep(zGtmTrigger.parse(trigger));
     return await this.requestWithRetry("GTM triggers.create", () =>
       this.api.accounts.containers.workspaces.triggers.create({
         parent: workspacePath,
@@ -558,7 +580,7 @@ export class GtmClient {
     trigger: GtmTrigger,
     options: { fingerprint?: string } = {}
   ): Promise<tagmanager_v2.Schema$Trigger> {
-    const payload = zGtmTrigger.parse(trigger);
+    const payload = this.stripIacMetadataDeep(zGtmTrigger.parse(trigger));
     const params: { path: string; requestBody: tagmanager_v2.Schema$Trigger; fingerprint?: string } = {
       path: triggerPath,
       requestBody: payload as unknown as tagmanager_v2.Schema$Trigger
@@ -649,7 +671,7 @@ export class GtmClient {
   }
 
   async createVariable(workspacePath: string, variable: GtmVariable): Promise<tagmanager_v2.Schema$Variable> {
-    const payload = zGtmVariable.parse(variable);
+    const payload = this.stripIacMetadataDeep(zGtmVariable.parse(variable));
     return await this.requestWithRetry("GTM variables.create", () =>
       this.api.accounts.containers.workspaces.variables.create({
         parent: workspacePath,
@@ -673,7 +695,7 @@ export class GtmClient {
   }
 
   async createZone(workspacePath: string, zone: GtmZone): Promise<tagmanager_v2.Schema$Zone> {
-    const payload = zGtmZone.parse(zone);
+    const payload = this.stripIacMetadataDeep(zGtmZone.parse(zone));
     return await this.requestWithRetry(
       "GTM zones.create",
       () =>
@@ -700,7 +722,7 @@ export class GtmClient {
     zone: GtmZone,
     options: { fingerprint?: string } = {}
   ): Promise<tagmanager_v2.Schema$Zone> {
-    const payload = zGtmZone.parse(zone);
+    const payload = this.stripIacMetadataDeep(zGtmZone.parse(zone));
     const params: { path: string; requestBody: tagmanager_v2.Schema$Zone; fingerprint?: string } = {
       path: zonePath,
       requestBody: payload as unknown as tagmanager_v2.Schema$Zone
@@ -744,6 +766,120 @@ export class GtmClient {
     return match;
   }
 
+  // ----------------------------
+  // Folders
+  // ----------------------------
+  async listFolders(workspacePath: string): Promise<tagmanager_v2.Schema$Folder[]> {
+    return await this.listAllPages("GTM folders.list", async (pageToken) => {
+      const data = await this.request("GTM folders.list", () =>
+        this.api.accounts.containers.workspaces.folders.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
+      );
+      return { items: data.folder ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async createFolder(workspacePath: string, folder: GtmFolder): Promise<tagmanager_v2.Schema$Folder> {
+    const payload = this.stripIacMetadataDeep(zGtmFolder.parse(folder));
+    return await this.requestWithRetry(
+      "GTM folders.create",
+      () =>
+        this.api.accounts.containers.workspaces.folders.create({
+          parent: workspacePath,
+          requestBody: payload as unknown as tagmanager_v2.Schema$Folder
+        }),
+      "write"
+    );
+  }
+
+  async getFolder(folderPath: string): Promise<tagmanager_v2.Schema$Folder> {
+    return await this.request("GTM folders.get", () =>
+      this.api.accounts.containers.workspaces.folders.get({ path: folderPath })
+    );
+  }
+
+  async getFolderById(workspacePath: string, folderId: string): Promise<tagmanager_v2.Schema$Folder> {
+    return await this.getFolder(this.childPath(workspacePath, "folders", folderId));
+  }
+
+  async updateFolder(
+    folderPath: string,
+    folder: GtmFolder,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Folder> {
+    const payload = this.stripIacMetadataDeep(zGtmFolder.parse(folder));
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Folder; fingerprint?: string } = {
+      path: folderPath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Folder
+    };
+    if (options.fingerprint) params.fingerprint = options.fingerprint;
+
+    return await this.requestWithRetry(
+      "GTM folders.update",
+      () => this.api.accounts.containers.workspaces.folders.update(params),
+      "write"
+    );
+  }
+
+  async updateFolderById(
+    workspacePath: string,
+    folderId: string,
+    folder: GtmFolder,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Folder> {
+    return await this.updateFolder(this.childPath(workspacePath, "folders", folderId), folder, options);
+  }
+
+  async deleteFolder(folderPath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM folders.delete",
+      () => this.api.accounts.containers.workspaces.folders.delete({ path: folderPath }),
+      "write"
+    );
+  }
+
+  async deleteFolderById(workspacePath: string, folderId: string): Promise<void> {
+    await this.deleteFolder(this.childPath(workspacePath, "folders", folderId));
+  }
+
+  async moveEntitiesToFolder(params: {
+    folderPath: string;
+    tagId?: string[];
+    triggerId?: string[];
+    variableId?: string[];
+  }): Promise<void> {
+    const request: {
+      path: string;
+      tagId?: string[];
+      triggerId?: string[];
+      variableId?: string[];
+    } = { path: params.folderPath };
+
+    if (params.tagId?.length) request.tagId = params.tagId;
+    if (params.triggerId?.length) request.triggerId = params.triggerId;
+    if (params.variableId?.length) request.variableId = params.variableId;
+
+    await this.requestWithRetry(
+      "GTM folders.move_entities_to_folder",
+      () => this.api.accounts.containers.workspaces.folders.move_entities_to_folder(request),
+      "write"
+    );
+  }
+
+  async findFolderByName(workspacePath: string, folderName: string): Promise<tagmanager_v2.Schema$Folder | undefined> {
+    const folders = await this.listFolders(workspacePath);
+    return folders.find((f) => (f.name ?? "").toLowerCase() === folderName.toLowerCase());
+  }
+
+  async getFolderByName(workspacePath: string, folderName: string): Promise<tagmanager_v2.Schema$Folder> {
+    const match = await this.findFolderByName(workspacePath, folderName);
+    if (!match) {
+      throw new Error(`Folder not found in workspace (${workspacePath}): name="${folderName}"`);
+    }
+    return match;
+  }
+
   async getVariable(variablePath: string): Promise<tagmanager_v2.Schema$Variable> {
     return await this.request("GTM variables.get", () =>
       this.api.accounts.containers.workspaces.variables.get({ path: variablePath })
@@ -759,7 +895,7 @@ export class GtmClient {
     variable: GtmVariable,
     options: { fingerprint?: string } = {}
   ): Promise<tagmanager_v2.Schema$Variable> {
-    const payload = zGtmVariable.parse(variable);
+    const payload = this.stripIacMetadataDeep(zGtmVariable.parse(variable));
     const params: { path: string; requestBody: tagmanager_v2.Schema$Variable; fingerprint?: string } = {
       path: variablePath,
       requestBody: payload as unknown as tagmanager_v2.Schema$Variable
@@ -853,7 +989,7 @@ export class GtmClient {
     workspacePath: string,
     template: GtmCustomTemplate
   ): Promise<tagmanager_v2.Schema$CustomTemplate> {
-    const payload = zGtmCustomTemplate.parse(template);
+    const payload = this.stripIacMetadataDeep(zGtmCustomTemplate.parse(template));
     return await this.requestWithRetry(
       "GTM templates.create",
       () =>
@@ -880,7 +1016,7 @@ export class GtmClient {
     template: GtmCustomTemplate,
     options: { fingerprint?: string } = {}
   ): Promise<tagmanager_v2.Schema$CustomTemplate> {
-    const payload = zGtmCustomTemplate.parse(template);
+    const payload = this.stripIacMetadataDeep(zGtmCustomTemplate.parse(template));
     const params: { path: string; requestBody: tagmanager_v2.Schema$CustomTemplate; fingerprint?: string } = {
       path: templatePath,
       requestBody: payload as unknown as tagmanager_v2.Schema$CustomTemplate

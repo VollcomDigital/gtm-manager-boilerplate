@@ -170,3 +170,47 @@ export const zGtmZone = z
   })
   .passthrough();
 
+/**
+ * Minimal GTM API v2 Folder representation (subset).
+ *
+ * Reference: https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/folders
+ */
+export interface GtmFolderMembers {
+  tagNames?: string[];
+  triggerNames?: string[];
+  variableNames?: string[];
+}
+
+export interface GtmFolder {
+  folderId?: string;
+  name: string;
+  notes?: string;
+
+  /**
+   * IaC-only metadata; stripped before calling the GTM API.
+   *
+   * Folder membership in GTM is represented by parentFolderId / moveEntitiesToFolder.
+   * This field is used to express membership by *names* in config.
+   */
+  __members?: GtmFolderMembers;
+
+  [key: string]: unknown;
+}
+
+export const zGtmFolderMembers = z
+  .object({
+    tagNames: z.array(z.string().min(1)).optional(),
+    triggerNames: z.array(z.string().min(1)).optional(),
+    variableNames: z.array(z.string().min(1)).optional()
+  })
+  .strict();
+
+export const zGtmFolder = z
+  .object({
+    folderId: z.string().min(1).optional(),
+    name: z.string().min(1),
+    notes: z.string().optional(),
+    __members: zGtmFolderMembers.optional()
+  })
+  .passthrough();
+
