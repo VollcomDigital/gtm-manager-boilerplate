@@ -10,6 +10,7 @@ import {
   type GtmTrigger,
   type GtmVariable
 } from "../types/gtm-schema";
+import type { Logger } from "./logger";
 import { isRetryableGoogleApiError, withRetry, type OperationKind } from "./retry";
 
 const READ_RETRIES = 4;
@@ -62,9 +63,11 @@ export interface ResolvedAccountContainer {
 
 export class GtmClient {
   private readonly api: tagmanager_v2.Tagmanager;
+  private readonly logger?: Logger;
 
-  constructor(auth: GoogleAuth) {
+  constructor(auth: GoogleAuth, options: { logger?: Logger } = {}) {
     this.api = google.tagmanager({ version: "v2", auth });
+    this.logger = options.logger;
   }
 
   toAccountPath(accountId: string): string {
@@ -161,6 +164,15 @@ export class GtmClient {
         baseDelayMs: RETRY_BASE_DELAY_MS,
         maxDelayMs: RETRY_MAX_DELAY_MS,
         jitter: true,
+        onRetry: this.logger
+          ? ({ attempt, delayMs, err }) => {
+              this.logger?.warn(`${context} retrying`, {
+                attempt,
+                delayMs,
+                error: this.formatError(err)
+              });
+            }
+          : undefined,
         shouldRetry: isRetryableGoogleApiError
       });
     } catch (err: unknown) {
@@ -292,6 +304,18 @@ export class GtmClient {
       this.api.accounts.containers.workspaces.list({ parent: containerPath })
     );
     return data.workspace ?? [];
+  }
+
+  async createWorkspace(containerPath: string, workspaceName: string): Promise<tagmanager_v2.Schema$Workspace> {
+    return await this.requestWithRetry(
+      "GTM workspaces.create",
+      () =>
+        this.api.accounts.containers.workspaces.create({
+          parent: containerPath,
+          requestBody: { name: workspaceName }
+        }),
+      "write"
+    );
   }
 
   async getWorkspace(workspacePath: string): Promise<tagmanager_v2.Schema$Workspace> {
