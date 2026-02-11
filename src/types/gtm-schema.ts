@@ -245,3 +245,59 @@ export const zGtmEnvironment = z
   })
   .passthrough();
 
+/**
+ * Minimal GTM API v2 Server-side Client representation (subset).
+ *
+ * IMPORTANT: This is a GTM "Client" resource (sGTM), not this repo's `GtmClient` wrapper.
+ *
+ * Reference: https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/clients
+ */
+export interface GtmServerClient {
+  clientId?: string;
+  name: string;
+  type: string;
+  notes?: string;
+  parameter?: GtmParameter[];
+  priority?: number;
+  parentFolderId?: string;
+  [key: string]: unknown;
+}
+
+export const zGtmServerClient = z
+  .object({
+    clientId: z.string().min(1).optional(),
+    name: z.string().min(1),
+    type: z.string().min(1),
+    notes: z.string().optional(),
+    parameter: z.array(zGtmParameter).optional(),
+    priority: z.number().optional(),
+    parentFolderId: z.string().min(1).optional()
+  })
+  .passthrough();
+
+/**
+ * Minimal GTM API v2 Server-side Transformation representation (subset).
+ *
+ * Reference: https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/transformations
+ */
+export interface GtmServerTransformation {
+  transformationId?: string;
+  name: string;
+  type: string;
+  notes?: string;
+  parameter?: GtmParameter[];
+  parentFolderId?: string;
+  [key: string]: unknown;
+}
+
+export const zGtmServerTransformation = z
+  .object({
+    transformationId: z.string().min(1).optional(),
+    name: z.string().min(1),
+    type: z.string().min(1),
+    notes: z.string().optional(),
+    parameter: z.array(zGtmParameter).optional(),
+    parentFolderId: z.string().min(1).optional()
+  })
+  .passthrough();
+

@@ -4,6 +4,8 @@ import {
   zGtmCustomTemplate,
   zGtmEnvironment,
   zGtmFolder,
+  zGtmServerClient,
+  zGtmServerTransformation,
   zGtmTag,
   zGtmTrigger,
   zGtmVariable,
@@ -11,6 +13,8 @@ import {
   type GtmCustomTemplate,
   type GtmEnvironment,
   type GtmFolder,
+  type GtmServerClient,
+  type GtmServerTransformation,
   type GtmTag,
   type GtmTrigger,
   type GtmVariable,
@@ -779,6 +783,196 @@ export class GtmClient {
       () => this.api.accounts.containers.workspaces.built_in_variables.delete({ path, type: types }),
       "write"
     );
+  }
+
+  // ----------------------------
+  // Server-side GTM: Clients
+  // ----------------------------
+  async listClients(workspacePath: string): Promise<tagmanager_v2.Schema$Client[]> {
+    return await this.listAllPages("GTM clients.list", async (pageToken) => {
+      const data = await this.request("GTM clients.list", () =>
+        this.api.accounts.containers.workspaces.clients.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
+      );
+      return { items: data.client ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async createClient(workspacePath: string, client: GtmServerClient): Promise<tagmanager_v2.Schema$Client> {
+    const payload = this.stripIacMetadataDeep(zGtmServerClient.parse(client));
+    return await this.requestWithRetry(
+      "GTM clients.create",
+      () =>
+        this.api.accounts.containers.workspaces.clients.create({
+          parent: workspacePath,
+          requestBody: payload as unknown as tagmanager_v2.Schema$Client
+        }),
+      "write"
+    );
+  }
+
+  async getClient(clientPath: string): Promise<tagmanager_v2.Schema$Client> {
+    return await this.request("GTM clients.get", () =>
+      this.api.accounts.containers.workspaces.clients.get({ path: clientPath })
+    );
+  }
+
+  async getClientById(workspacePath: string, clientId: string): Promise<tagmanager_v2.Schema$Client> {
+    return await this.getClient(this.childPath(workspacePath, "clients", clientId));
+  }
+
+  async updateClient(
+    clientPath: string,
+    client: GtmServerClient,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Client> {
+    const payload = this.stripIacMetadataDeep(zGtmServerClient.parse(client));
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Client; fingerprint?: string } = {
+      path: clientPath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Client
+    };
+    if (options.fingerprint) params.fingerprint = options.fingerprint;
+
+    return await this.requestWithRetry(
+      "GTM clients.update",
+      () => this.api.accounts.containers.workspaces.clients.update(params),
+      "write"
+    );
+  }
+
+  async updateClientById(
+    workspacePath: string,
+    clientId: string,
+    client: GtmServerClient,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Client> {
+    return await this.updateClient(this.childPath(workspacePath, "clients", clientId), client, options);
+  }
+
+  async deleteClient(clientPath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM clients.delete",
+      () => this.api.accounts.containers.workspaces.clients.delete({ path: clientPath }),
+      "write"
+    );
+  }
+
+  async deleteClientById(workspacePath: string, clientId: string): Promise<void> {
+    await this.deleteClient(this.childPath(workspacePath, "clients", clientId));
+  }
+
+  async findClientByName(workspacePath: string, clientName: string): Promise<tagmanager_v2.Schema$Client | undefined> {
+    const clients = await this.listClients(workspacePath);
+    return clients.find((c) => (c.name ?? "").toLowerCase() === clientName.toLowerCase());
+  }
+
+  async getClientByName(workspacePath: string, clientName: string): Promise<tagmanager_v2.Schema$Client> {
+    const match = await this.findClientByName(workspacePath, clientName);
+    if (!match) {
+      throw new Error(`Client not found in workspace (${workspacePath}): name="${clientName}"`);
+    }
+    return match;
+  }
+
+  // ----------------------------
+  // Server-side GTM: Transformations
+  // ----------------------------
+  async listTransformations(workspacePath: string): Promise<tagmanager_v2.Schema$Transformation[]> {
+    return await this.listAllPages("GTM transformations.list", async (pageToken) => {
+      const data = await this.request("GTM transformations.list", () =>
+        this.api.accounts.containers.workspaces.transformations.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
+      );
+      return { items: data.transformation ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async createTransformation(
+    workspacePath: string,
+    transformation: GtmServerTransformation
+  ): Promise<tagmanager_v2.Schema$Transformation> {
+    const payload = this.stripIacMetadataDeep(zGtmServerTransformation.parse(transformation));
+    return await this.requestWithRetry(
+      "GTM transformations.create",
+      () =>
+        this.api.accounts.containers.workspaces.transformations.create({
+          parent: workspacePath,
+          requestBody: payload as unknown as tagmanager_v2.Schema$Transformation
+        }),
+      "write"
+    );
+  }
+
+  async getTransformation(transformationPath: string): Promise<tagmanager_v2.Schema$Transformation> {
+    return await this.request("GTM transformations.get", () =>
+      this.api.accounts.containers.workspaces.transformations.get({ path: transformationPath })
+    );
+  }
+
+  async getTransformationById(workspacePath: string, transformationId: string): Promise<tagmanager_v2.Schema$Transformation> {
+    return await this.getTransformation(this.childPath(workspacePath, "transformations", transformationId));
+  }
+
+  async updateTransformation(
+    transformationPath: string,
+    transformation: GtmServerTransformation,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Transformation> {
+    const payload = this.stripIacMetadataDeep(zGtmServerTransformation.parse(transformation));
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Transformation; fingerprint?: string } = {
+      path: transformationPath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Transformation
+    };
+    if (options.fingerprint) params.fingerprint = options.fingerprint;
+
+    return await this.requestWithRetry(
+      "GTM transformations.update",
+      () => this.api.accounts.containers.workspaces.transformations.update(params),
+      "write"
+    );
+  }
+
+  async updateTransformationById(
+    workspacePath: string,
+    transformationId: string,
+    transformation: GtmServerTransformation,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Transformation> {
+    return await this.updateTransformation(
+      this.childPath(workspacePath, "transformations", transformationId),
+      transformation,
+      options
+    );
+  }
+
+  async deleteTransformation(transformationPath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM transformations.delete",
+      () => this.api.accounts.containers.workspaces.transformations.delete({ path: transformationPath }),
+      "write"
+    );
+  }
+
+  async deleteTransformationById(workspacePath: string, transformationId: string): Promise<void> {
+    await this.deleteTransformation(this.childPath(workspacePath, "transformations", transformationId));
+  }
+
+  async findTransformationByName(
+    workspacePath: string,
+    transformationName: string
+  ): Promise<tagmanager_v2.Schema$Transformation | undefined> {
+    const transformations = await this.listTransformations(workspacePath);
+    return transformations.find((t) => (t.name ?? "").toLowerCase() === transformationName.toLowerCase());
+  }
+
+  async getTransformationByName(workspacePath: string, transformationName: string): Promise<tagmanager_v2.Schema$Transformation> {
+    const match = await this.findTransformationByName(workspacePath, transformationName);
+    if (!match) {
+      throw new Error(`Transformation not found in workspace (${workspacePath}): name="${transformationName}"`);
+    }
+    return match;
   }
 
   // ----------------------------
