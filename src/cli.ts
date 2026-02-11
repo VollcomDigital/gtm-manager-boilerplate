@@ -12,6 +12,7 @@ import { loadRepoConfig } from "./iac/load-repo-config";
 import { normalizeForDiff } from "./iac/normalize";
 import { fetchWorkspaceSnapshot } from "./iac/snapshot";
 import { syncWorkspace } from "./iac/sync";
+import { snapshotFromContainerVersion } from "./iac/version-snapshot";
 import type { GtmEnvironment } from "./types/gtm-schema";
 
 type FlagValue = string | boolean;
@@ -96,6 +97,7 @@ Commands:
   reset-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --confirm [--json]
   export-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--out <file>] [--json]
   diff-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--json]
+  diff-live --account-id <id> --container-id <id|GTM-XXXX> --config <file> [--json]
   sync-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --config <file> [--delete-missing --confirm] [--json]
   hash-config --config <file>
   diff-repo --config <file[,overlay...]> [--container-keys a,b] [--labels k=v,k2=v2] [--json]
@@ -121,6 +123,7 @@ Examples:
   npm run cli -- reset-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --confirm --json
   npm run cli -- export-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --out ./workspace.snapshot.json
   npm run cli -- diff-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --json
+  npm run cli -- diff-live --account-id 1234567890 --container-id 51955729 --config ./desired.workspace.json --json
   npm run cli -- sync-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --config ./desired.workspace.json --dry-run --json
   npm run cli -- hash-config --config ./desired.workspace.json --json
   npm run cli -- diff-repo --config ./gtm.repo.yml --labels env=prod --fail-on-drift --json
@@ -670,6 +673,66 @@ async function diffWorkspaceFromConfig(
   }
 
   console.log(json);
+}
+
+async function diffLiveFromConfig(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  configPath: string,
+  options: { failOnDrift: boolean; ignoreDeletes: boolean },
+  asJson: boolean
+): Promise<void> {
+  const desired = await loadWorkspaceDesiredState(configPath);
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+  const live = await gtm.getLiveContainerVersion(containerPath);
+  const snapshot = snapshotFromContainerVersion(live);
+  const diff = diffWorkspace(desired, snapshot);
+
+  if (options.ignoreDeletes) {
+    diff.builtInVariables.delete = [];
+    diff.folders.delete = [];
+    diff.clients.delete = [];
+    diff.transformations.delete = [];
+    diff.tags.delete = [];
+    diff.triggers.delete = [];
+    diff.variables.delete = [];
+    diff.templates.delete = [];
+    diff.zones.delete = [];
+  }
+
+  const hasDrift = [
+    diff.builtInVariables,
+    diff.folders,
+    diff.clients,
+    diff.transformations,
+    diff.tags,
+    diff.triggers,
+    diff.variables,
+    diff.templates,
+    diff.zones
+  ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
+
+  if (options.failOnDrift && hasDrift) {
+    process.exitCode = 2;
+  }
+
+  const json = JSON.stringify(
+    {
+      liveVersion: {
+        containerVersionId: live.containerVersionId ?? null,
+        name: live.name ?? null,
+        path: live.path ?? null
+      },
+      diff
+    },
+    null,
+    2
+  );
+
+  // For now this command is JSON-first since it is typically used in CI.
+  console.log(json);
+  if (!asJson) return;
 }
 
 async function diffRepoFromConfig(
@@ -1359,6 +1422,33 @@ async function main(): Promise<void> {
           containerId: args.containerId
         },
         args.workspaceName,
+        args.config,
+        { failOnDrift, ignoreDeletes },
+        asJson
+      );
+      return;
+    }
+    case "diff-live": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1),
+          config: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id"),
+        config: getStringFlag(parsed.flags, "config")
+      });
+
+      await diffLiveFromConfig(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
         args.config,
         { failOnDrift, ignoreDeletes },
         asJson
