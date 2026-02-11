@@ -8,6 +8,7 @@ const DYNAMIC_KEYS = new Set<string>([
   "fingerprint",
 
   // Entity IDs (IaC typically matches by name)
+  "folderId",
   "tagId",
   "triggerId",
   "variableId",

@@ -1,6 +1,6 @@
 import type { tagmanager_v2 } from "googleapis";
 import type { GtmClient } from "../lib/gtm-client";
-import type { GtmCustomTemplate, GtmTag, GtmTrigger, GtmVariable, GtmZone } from "../types/gtm-schema";
+import type { GtmCustomTemplate, GtmFolder, GtmTag, GtmTrigger, GtmVariable, GtmZone } from "../types/gtm-schema";
 import type { WorkspaceDesiredState } from "./workspace-config";
 import { matchesDesiredSubset } from "./diff";
 import { sha256HexFromString } from "./hash";
@@ -156,6 +156,7 @@ export interface SyncWorkspaceResult {
   variables: EntitySyncSummary;
   triggers: EntitySyncSummary;
   zones: EntitySyncSummary;
+  folders: EntitySyncSummary;
   tags: EntitySyncSummary;
   warnings: string[];
 }
@@ -187,6 +188,7 @@ export async function syncWorkspace(
   ensureUniqueNames(desired.variables, "variable");
   ensureUniqueNames(desired.triggers, "trigger");
   ensureUniqueNames(desired.zones, "zone");
+  ensureUniqueNames(desired.folders, "folder");
   ensureUniqueNames(desired.tags, "tag");
 
   const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
@@ -197,6 +199,7 @@ export async function syncWorkspace(
     variables: emptySummary(),
     triggers: emptySummary(),
     zones: emptySummary(),
+    folders: emptySummary(),
     tags: emptySummary(),
     warnings: []
   };
@@ -287,12 +290,16 @@ export async function syncWorkspace(
   // ----------------------------
   const currentVariablesByName = new Map<string, tagmanager_v2.Schema$Variable>();
   const availableVariableNames = new Set<string>();
+  const variableNameToId = new Map<string, string>();
   for (const v of snapshot.variables) {
     const name = normalizeEntityName(v);
     if (name) {
       const k = lower(name);
       currentVariablesByName.set(k, v);
       availableVariableNames.add(k);
+      if (v.variableId) {
+        variableNameToId.set(k, v.variableId);
+      }
     }
   }
 
@@ -303,7 +310,10 @@ export async function syncWorkspace(
       res.variables.created.push(dv.name);
       availableVariableNames.add(key);
       if (!options.dryRun) {
-        await gtm.createVariable(workspacePath, dv as unknown as GtmVariable);
+        const created = await gtm.createVariable(workspacePath, dv as unknown as GtmVariable);
+        if (created.variableId) {
+          variableNameToId.set(key, created.variableId);
+        }
       }
       continue;
     }
@@ -324,12 +334,15 @@ export async function syncWorkspace(
       const merged = mergeDesiredIntoCurrent(existing, dv);
       const body = stripDynamicFieldsDeep(merged) as unknown as GtmVariable;
       const fingerprint = existing.fingerprint ?? undefined;
-      await gtm.updateVariableById(
+      const updated = await gtm.updateVariableById(
         workspacePath,
         existing.variableId,
         body as unknown as GtmVariable,
         fingerprint ? { fingerprint } : {}
       );
+      if (updated.variableId) {
+        variableNameToId.set(key, updated.variableId);
+      }
     }
   }
 
@@ -476,9 +489,16 @@ export async function syncWorkspace(
   // Tags (depends on triggers)
   // ----------------------------
   const currentTagsByName = new Map<string, tagmanager_v2.Schema$Tag>();
+  const tagNameToId = new Map<string, string>();
   for (const t of snapshot.tags) {
     const name = normalizeEntityName(t);
-    if (name) currentTagsByName.set(lower(name), t);
+    if (name) {
+      const k = lower(name);
+      currentTagsByName.set(k, t);
+      if (t.tagId) {
+        tagNameToId.set(k, t.tagId);
+      }
+    }
   }
 
   if (options.validateVariableRefs) {
@@ -512,10 +532,13 @@ export async function syncWorkspace(
 
       res.tags.created.push(name);
       if (!options.dryRun) {
-        await gtm.createTag(
+        const created = await gtm.createTag(
           workspacePath,
           stripDynamicFieldsDeep(desiredTagResolved) as unknown as GtmTag
         );
+        if (created.tagId) {
+          tagNameToId.set(key, created.tagId);
+        }
       }
       continue;
     }
@@ -536,7 +559,10 @@ export async function syncWorkspace(
       const merged = mergeDesiredIntoCurrent(existing, desiredTagResolved);
       const body = stripDynamicFieldsDeep(merged) as unknown as GtmTag;
       const fingerprint = existing.fingerprint ?? undefined;
-      await gtm.updateTagById(workspacePath, existing.tagId, body as unknown as GtmTag, fingerprint ? { fingerprint } : {});
+      const updated = await gtm.updateTagById(workspacePath, existing.tagId, body as unknown as GtmTag, fingerprint ? { fingerprint } : {});
+      if (updated.tagId) {
+        tagNameToId.set(key, updated.tagId);
+      }
     }
   }
 
@@ -552,8 +578,106 @@ export async function syncWorkspace(
     }
   }
 
+  // ----------------------------
+  // Folders (optional membership)
+  // ----------------------------
+  const currentFoldersByName = new Map<string, tagmanager_v2.Schema$Folder>();
+  for (const f of snapshot.folders) {
+    const name = normalizeEntityName(f);
+    if (name) currentFoldersByName.set(lower(name), f);
+  }
+
+  for (const df of desired.folders) {
+    const key = lower(df.name);
+    const existing = currentFoldersByName.get(key);
+
+    let folderId: string | undefined = existing?.folderId ?? undefined;
+
+    if (!existing) {
+      res.folders.created.push(df.name);
+      if (!options.dryRun) {
+        const created = await gtm.createFolder(workspacePath, stripDynamicFieldsDeep(df) as unknown as GtmFolder);
+        folderId = created.folderId ?? undefined;
+      }
+    } else if (!options.updateExisting) {
+      res.folders.skipped.push(df.name);
+    } else if (!shouldUpdate(existing, df)) {
+      res.folders.skipped.push(df.name);
+    } else {
+      res.folders.updated.push(df.name);
+      if (!options.dryRun) {
+        if (!existing.folderId) throw new Error(`Cannot update folder "${df.name}" (missing folderId).`);
+        const merged = mergeDesiredIntoCurrent(existing, df);
+        const body = stripDynamicFieldsDeep(merged) as unknown as GtmFolder;
+        const fingerprint = existing.fingerprint ?? undefined;
+        const updated = await gtm.updateFolderById(
+          workspacePath,
+          existing.folderId,
+          body as unknown as GtmFolder,
+          fingerprint ? { fingerprint } : {}
+        );
+        folderId = updated.folderId ?? existing.folderId;
+      }
+    }
+
+    // Apply membership mapping by names, if provided.
+    const members = (df as unknown as { __members?: { tagNames?: string[]; triggerNames?: string[]; variableNames?: string[] } })
+      .__members;
+    const hasMembers =
+      Boolean(members?.tagNames?.length) || Boolean(members?.triggerNames?.length) || Boolean(members?.variableNames?.length);
+
+    if (!hasMembers) {
+      continue;
+    }
+
+    if (options.dryRun) {
+      res.warnings.push(`dry-run: would move entities into folder "${df.name}"`);
+      continue;
+    }
+
+    if (!folderId) {
+      throw new Error(`Cannot move entities into folder "${df.name}" (missing folderId).`);
+    }
+
+    const resolveIds = (names: string[] | undefined, map: Map<string, string>, kind: string): string[] => {
+      const out: string[] = [];
+      for (const n of names ?? []) {
+        const id = map.get(lower(n));
+        if (!id) {
+          throw new Error(`Folder "${df.name}" references missing ${kind} by name: "${n}"`);
+        }
+        out.push(id);
+      }
+      return out;
+    };
+
+    const tagIds = resolveIds(members?.tagNames, tagNameToId, "tag");
+    const triggerIds = resolveIds(members?.triggerNames, triggerNameToId, "trigger");
+    const variableIds = resolveIds(members?.variableNames, variableNameToId, "variable");
+
+    const folderPath = `${workspacePath}/folders/${folderId}`;
+    await gtm.moveEntitiesToFolder({
+      folderPath,
+      tagId: tagIds,
+      triggerId: triggerIds,
+      variableId: variableIds
+    });
+  }
+
+  if (options.deleteMissing) {
+    const desiredSet = new Set(desired.folders.map((f) => lower(f.name)));
+    for (const [nameLowerKey, existing] of currentFoldersByName.entries()) {
+      if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      res.folders.deleted.push(displayName);
+      if (!options.dryRun && existing.folderId) {
+        await gtm.deleteFolderById(workspacePath, existing.folderId);
+      }
+    }
+  }
+
   // Sort for stable output.
-  for (const summary of [res.templates, res.variables, res.triggers, res.zones, res.tags]) {
+  for (const summary of [res.templates, res.variables, res.triggers, res.zones, res.tags, res.folders]) {
     summary.created.sort();
     summary.updated.sort();
     summary.deleted.sort();

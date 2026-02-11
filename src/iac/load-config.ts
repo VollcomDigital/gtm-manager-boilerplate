@@ -110,6 +110,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
 
   let out: WorkspaceDesiredState = {
     workspaceName: first.workspaceName,
+    folders: first.folders ?? [],
     tags: first.tags ?? [],
     triggers: first.triggers ?? [],
     variables: first.variables ?? [],
@@ -121,6 +122,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
     if (p.workspaceName !== out.workspaceName) {
       throw new Error(`workspaceName mismatch across overlays: "${out.workspaceName}" vs "${p.workspaceName}"`);
     }
+    if (p.folders) out.folders = mergeByName(out.folders, p.folders);
     if (p.tags) out.tags = mergeByName(out.tags, p.tags);
     if (p.triggers) out.triggers = mergeByName(out.triggers, p.triggers);
     if (p.variables) out.variables = mergeByName(out.variables, p.variables);

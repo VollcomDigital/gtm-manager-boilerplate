@@ -2,6 +2,7 @@ import type { tagmanager_v2 } from "googleapis";
 import type { GtmClient } from "../lib/gtm-client";
 
 export interface WorkspaceSnapshot {
+  folders: tagmanager_v2.Schema$Folder[];
   tags: tagmanager_v2.Schema$Tag[];
   triggers: tagmanager_v2.Schema$Trigger[];
   variables: tagmanager_v2.Schema$Variable[];
@@ -13,7 +14,8 @@ export interface WorkspaceSnapshot {
  * Fetches the current state of a GTM workspace (subset) needed for IaC diffing.
  */
 export async function fetchWorkspaceSnapshot(gtm: GtmClient, workspacePath: string): Promise<WorkspaceSnapshot> {
-  const [tags, triggers, variables, templates, zones] = await Promise.all([
+  const [folders, tags, triggers, variables, templates, zones] = await Promise.all([
+    gtm.listFolders(workspacePath),
     gtm.listTags(workspacePath),
     gtm.listTriggers(workspacePath),
     gtm.listVariables(workspacePath),
@@ -21,7 +23,7 @@ export async function fetchWorkspaceSnapshot(gtm: GtmClient, workspacePath: stri
     listZonesSafe(gtm, workspacePath)
   ]);
 
-  return { tags, triggers, variables, templates, zones };
+  return { folders, tags, triggers, variables, templates, zones };
 }
 
 function parseStatusFromErrorMessage(err: unknown): number | undefined {

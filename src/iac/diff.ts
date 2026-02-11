@@ -81,6 +81,7 @@ export interface EntityDiff {
 }
 
 export interface WorkspaceDiff {
+  folders: EntityDiff;
   tags: EntityDiff;
   triggers: EntityDiff;
   variables: EntityDiff;
@@ -89,6 +90,7 @@ export interface WorkspaceDiff {
 }
 
 export interface WorkspaceSnapshot {
+  folders: unknown[];
   tags: unknown[];
   triggers: unknown[];
   variables: unknown[];
@@ -147,6 +149,7 @@ function diffByName(desired: Array<{ name: string }>, current: unknown[]): Entit
  */
 export function diffWorkspace(desired: WorkspaceDesiredState, current: WorkspaceSnapshot): WorkspaceDiff {
   return {
+    folders: diffByName(desired.folders, current.folders),
     tags: diffByName(desired.tags, current.tags),
     triggers: diffByName(desired.triggers, current.triggers),
     variables: diffByName(desired.variables, current.variables),
