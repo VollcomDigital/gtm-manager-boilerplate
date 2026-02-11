@@ -1,6 +1,15 @@
 import type { tagmanager_v2 } from "googleapis";
 import type { GtmClient } from "../lib/gtm-client";
-import type { GtmCustomTemplate, GtmFolder, GtmTag, GtmTrigger, GtmVariable, GtmZone } from "../types/gtm-schema";
+import type {
+  GtmCustomTemplate,
+  GtmFolder,
+  GtmServerClient,
+  GtmServerTransformation,
+  GtmTag,
+  GtmTrigger,
+  GtmVariable,
+  GtmZone
+} from "../types/gtm-schema";
 import type { WorkspaceDesiredState } from "./workspace-config";
 import { matchesDesiredSubset } from "./diff";
 import { sha256HexFromString } from "./hash";
@@ -155,6 +164,8 @@ export interface SyncWorkspaceResult {
   templates: EntitySyncSummary;
   variables: EntitySyncSummary;
   builtInVariables: EntitySyncSummary;
+  clients: EntitySyncSummary;
+  transformations: EntitySyncSummary;
   triggers: EntitySyncSummary;
   zones: EntitySyncSummary;
   folders: EntitySyncSummary;
@@ -187,6 +198,8 @@ export async function syncWorkspace(
 ): Promise<SyncWorkspaceResult> {
   ensureUniqueNames(desired.templates, "template");
   ensureUniqueNames(desired.variables, "variable");
+  ensureUniqueNames(desired.clients, "client");
+  ensureUniqueNames(desired.transformations, "transformation");
   ensureUniqueNames(desired.triggers, "trigger");
   ensureUniqueNames(desired.zones, "zone");
   ensureUniqueNames(desired.folders, "folder");
@@ -199,6 +212,8 @@ export async function syncWorkspace(
     templates: emptySummary(),
     variables: emptySummary(),
     builtInVariables: emptySummary(),
+    clients: emptySummary(),
+    transformations: emptySummary(),
     triggers: emptySummary(),
     zones: emptySummary(),
     folders: emptySummary(),
@@ -415,6 +430,122 @@ export async function syncWorkspace(
   }
 
   // ----------------------------
+  // Server-side GTM: Clients
+  // ----------------------------
+  const currentClientsByName = new Map<string, tagmanager_v2.Schema$Client>();
+  for (const c of snapshot.clients) {
+    const name = normalizeEntityName(c);
+    if (name) currentClientsByName.set(lower(name), c);
+  }
+
+  for (const dc of desired.clients) {
+    const key = lower(dc.name);
+    const existing = currentClientsByName.get(key);
+    if (!existing) {
+      res.clients.created.push(dc.name);
+      if (!options.dryRun) {
+        await gtm.createClient(workspacePath, dc as unknown as GtmServerClient);
+      }
+      continue;
+    }
+
+    if (!options.updateExisting) {
+      res.clients.skipped.push(dc.name);
+      continue;
+    }
+
+    if (!shouldUpdate(existing, dc)) {
+      res.clients.skipped.push(dc.name);
+      continue;
+    }
+
+    res.clients.updated.push(dc.name);
+    if (!options.dryRun) {
+      if (!existing.clientId) throw new Error(`Cannot update client "${dc.name}" (missing clientId).`);
+      const merged = mergeDesiredIntoCurrent(existing, dc);
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmServerClient;
+      const fingerprint = existing.fingerprint ?? undefined;
+      await gtm.updateClientById(
+        workspacePath,
+        existing.clientId,
+        body as unknown as GtmServerClient,
+        fingerprint ? { fingerprint } : {}
+      );
+    }
+  }
+
+  if (options.deleteMissing) {
+    const desiredSet = new Set(desired.clients.map((c) => lower(c.name)));
+    for (const [nameLowerKey, existing] of currentClientsByName.entries()) {
+      if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      res.clients.deleted.push(displayName);
+      if (!options.dryRun && existing.clientId) {
+        await gtm.deleteClientById(workspacePath, existing.clientId);
+      }
+    }
+  }
+
+  // ----------------------------
+  // Server-side GTM: Transformations
+  // ----------------------------
+  const currentTransformationsByName = new Map<string, tagmanager_v2.Schema$Transformation>();
+  for (const t of snapshot.transformations) {
+    const name = normalizeEntityName(t);
+    if (name) currentTransformationsByName.set(lower(name), t);
+  }
+
+  for (const dt of desired.transformations) {
+    const key = lower(dt.name);
+    const existing = currentTransformationsByName.get(key);
+    if (!existing) {
+      res.transformations.created.push(dt.name);
+      if (!options.dryRun) {
+        await gtm.createTransformation(workspacePath, dt as unknown as GtmServerTransformation);
+      }
+      continue;
+    }
+
+    if (!options.updateExisting) {
+      res.transformations.skipped.push(dt.name);
+      continue;
+    }
+
+    if (!shouldUpdate(existing, dt)) {
+      res.transformations.skipped.push(dt.name);
+      continue;
+    }
+
+    res.transformations.updated.push(dt.name);
+    if (!options.dryRun) {
+      if (!existing.transformationId) {
+        throw new Error(`Cannot update transformation "${dt.name}" (missing transformationId).`);
+      }
+      const merged = mergeDesiredIntoCurrent(existing, dt);
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmServerTransformation;
+      const fingerprint = existing.fingerprint ?? undefined;
+      await gtm.updateTransformationById(
+        workspacePath,
+        existing.transformationId,
+        body as unknown as GtmServerTransformation,
+        fingerprint ? { fingerprint } : {}
+      );
+    }
+  }
+
+  if (options.deleteMissing) {
+    const desiredSet = new Set(desired.transformations.map((t) => lower(t.name)));
+    for (const [nameLowerKey, existing] of currentTransformationsByName.entries()) {
+      if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      res.transformations.deleted.push(displayName);
+      if (!options.dryRun && existing.transformationId) {
+        await gtm.deleteTransformationById(workspacePath, existing.transformationId);
+      }
+    }
+  }
+
+  // ----------------------------
   // Triggers
   // ----------------------------
   const currentTriggersByName = new Map<string, tagmanager_v2.Schema$Trigger>();
@@ -558,7 +689,13 @@ export async function syncWorkspace(
   }
 
   if (options.validateVariableRefs) {
-    const refs = collectVariableReferencesFromValues([...desired.tags, ...desired.triggers, ...desired.zones]);
+    const refs = collectVariableReferencesFromValues([
+      ...desired.tags,
+      ...desired.triggers,
+      ...desired.clients,
+      ...desired.transformations,
+      ...desired.zones
+    ]);
     for (const refName of refs) {
       const k = lower(refName);
       if (!availableVariableNames.has(k)) {
@@ -735,7 +872,17 @@ export async function syncWorkspace(
   }
 
   // Sort for stable output.
-  for (const summary of [res.templates, res.variables, res.builtInVariables, res.triggers, res.zones, res.tags, res.folders]) {
+  for (const summary of [
+    res.templates,
+    res.variables,
+    res.builtInVariables,
+    res.clients,
+    res.transformations,
+    res.triggers,
+    res.zones,
+    res.tags,
+    res.folders
+  ]) {
     summary.created.sort();
     summary.updated.sort();
     summary.deleted.sort();

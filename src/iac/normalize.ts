@@ -12,7 +12,9 @@ const DYNAMIC_KEYS = new Set<string>([
   "tagId",
   "triggerId",
   "variableId",
+  "clientId",
   "templateId",
+  "transformationId",
   "zoneId"
 ]);
 

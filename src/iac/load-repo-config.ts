@@ -87,7 +87,7 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
   }
 
   // Lists: merge by name if provided
-  for (const listKey of ["folders", "tags", "triggers", "variables", "templates", "zones"] as const) {
+  for (const listKey of ["folders", "clients", "transformations", "tags", "triggers", "variables", "templates", "zones"] as const) {
     const oList = overlay[listKey];
     if (!Array.isArray(oList)) continue;
 
@@ -165,6 +165,8 @@ function finalizeRepoConfig(partial: { defaults?: { workspaceName?: string }; co
         builtInVariableTypes:
           (c.workspace as unknown as { builtInVariableTypes?: unknown[] } | undefined)?.builtInVariableTypes ?? [],
         folders: (c.workspace as unknown as { folders?: unknown[] } | undefined)?.folders ?? [],
+        clients: (c.workspace as unknown as { clients?: unknown[] } | undefined)?.clients ?? [],
+        transformations: (c.workspace as unknown as { transformations?: unknown[] } | undefined)?.transformations ?? [],
         tags: (c.workspace as unknown as { tags?: unknown[] } | undefined)?.tags ?? [],
         triggers: (c.workspace as unknown as { triggers?: unknown[] } | undefined)?.triggers ?? [],
         variables: (c.workspace as unknown as { variables?: unknown[] } | undefined)?.variables ?? [],

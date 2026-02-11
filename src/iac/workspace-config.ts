@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { zGtmCustomTemplate, zGtmFolder, zGtmTag, zGtmTrigger, zGtmVariable, zGtmZone } from "../types/gtm-schema";
+import {
+  zGtmCustomTemplate,
+  zGtmFolder,
+  zGtmServerClient,
+  zGtmServerTransformation,
+  zGtmTag,
+  zGtmTrigger,
+  zGtmVariable,
+  zGtmZone
+} from "../types/gtm-schema";
 
 /**
  * Minimal desired-state schema for a single GTM Workspace.
@@ -12,6 +21,8 @@ export const zWorkspaceDesiredState = z
     workspaceName: z.string().trim().min(1),
     builtInVariableTypes: z.array(z.string().trim().min(1)).default([]),
     folders: z.array(zGtmFolder).default([]),
+    clients: z.array(zGtmServerClient).default([]),
+    transformations: z.array(zGtmServerTransformation).default([]),
     tags: z.array(zGtmTag).default([]),
     triggers: z.array(zGtmTrigger).default([]),
     variables: z.array(zGtmVariable).default([]),
@@ -33,6 +44,8 @@ export const zWorkspaceDesiredStatePartial = z
     workspaceName: z.string().trim().min(1),
     builtInVariableTypes: z.array(z.string().trim().min(1)).optional(),
     folders: z.array(zGtmFolder).optional(),
+    clients: z.array(zGtmServerClient).optional(),
+    transformations: z.array(zGtmServerTransformation).optional(),
     tags: z.array(zGtmTag).optional(),
     triggers: z.array(zGtmTrigger).optional(),
     variables: z.array(zGtmVariable).optional(),
@@ -54,6 +67,8 @@ export const zWorkspaceDesiredStateOverlay = z
     workspaceName: z.string().trim().min(1).optional(),
     builtInVariableTypes: z.array(z.string().trim().min(1)).optional(),
     folders: z.array(zGtmFolder).optional(),
+    clients: z.array(zGtmServerClient).optional(),
+    transformations: z.array(zGtmServerTransformation).optional(),
     tags: z.array(zGtmTag).optional(),
     triggers: z.array(zGtmTrigger).optional(),
     variables: z.array(zGtmVariable).optional(),

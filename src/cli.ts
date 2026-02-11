@@ -573,6 +573,8 @@ async function exportWorkspaceSnapshot(
       .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
       .sort((a, b) => a.localeCompare(b)),
     folders: snapshot.folders.map((f) => normalizeForDiff(f)),
+    clients: snapshot.clients.map((c) => normalizeForDiff(c)),
+    transformations: snapshot.transformations.map((t) => normalizeForDiff(t)),
     tags: snapshot.tags.map((t) => normalizeForDiff(t)),
     triggers: snapshot.triggers.map((t) => normalizeForDiff(t)),
     variables: snapshot.variables.map((v) => normalizeForDiff(v)),
@@ -610,6 +612,8 @@ async function diffWorkspaceFromConfig(
   if (options.ignoreDeletes) {
     diff.builtInVariables.delete = [];
     diff.folders.delete = [];
+    diff.clients.delete = [];
+    diff.transformations.delete = [];
     diff.tags.delete = [];
     diff.triggers.delete = [];
     diff.variables.delete = [];
@@ -617,9 +621,17 @@ async function diffWorkspaceFromConfig(
     diff.zones.delete = [];
   }
 
-  const hasDrift = [diff.builtInVariables, diff.folders, diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
-    (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
-  );
+  const hasDrift = [
+    diff.builtInVariables,
+    diff.folders,
+    diff.clients,
+    diff.transformations,
+    diff.tags,
+    diff.triggers,
+    diff.variables,
+    diff.templates,
+    diff.zones
+  ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
 
   if (options.failOnDrift && hasDrift) {
     process.exitCode = 2;
@@ -678,6 +690,8 @@ async function diffRepoFromConfig(
       if (options.ignoreDeletes) {
         diff.builtInVariables.delete = [];
         diff.folders.delete = [];
+        diff.clients.delete = [];
+        diff.transformations.delete = [];
         diff.tags.delete = [];
         diff.triggers.delete = [];
         diff.variables.delete = [];
@@ -685,9 +699,17 @@ async function diffRepoFromConfig(
         diff.zones.delete = [];
       }
 
-      const drift = [diff.builtInVariables, diff.folders, diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
-        (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
-      );
+      const drift = [
+        diff.builtInVariables,
+        diff.folders,
+        diff.clients,
+        diff.transformations,
+        diff.tags,
+        diff.triggers,
+        diff.variables,
+        diff.templates,
+        diff.zones
+      ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
       if (drift) hadDrift = true;
 
       results.push({

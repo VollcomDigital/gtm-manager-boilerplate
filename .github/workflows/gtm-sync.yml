@@ -178,6 +178,8 @@ jobs:
             md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
             md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
             md += `| Built-in Variables | ${created(sync.builtInVariables)} | ${updated(sync.builtInVariables)} | ${deleted(sync.builtInVariables)} | ${skipped(sync.builtInVariables)} |\\n`;
+            md += `| Clients | ${created(sync.clients)} | ${updated(sync.clients)} | ${deleted(sync.clients)} | ${skipped(sync.clients)} |\\n`;
+            md += `| Transformations | ${created(sync.transformations)} | ${updated(sync.transformations)} | ${deleted(sync.transformations)} | ${skipped(sync.transformations)} |\\n`;
             md += `| Triggers | ${created(sync.triggers)} | ${updated(sync.triggers)} | ${deleted(sync.triggers)} | ${skipped(sync.triggers)} |\\n`;
             md += `| Zones | ${created(sync.zones)} | ${updated(sync.zones)} | ${deleted(sync.zones)} | ${skipped(sync.zones)} |\\n`;
             md += `| Folders | ${created(sync.folders)} | ${updated(sync.folders)} | ${deleted(sync.folders)} | ${skipped(sync.folders)} |\\n`;
@@ -314,6 +316,8 @@ jobs:
           md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
           md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
           md += `| Built-in Variables | ${created(sync.builtInVariables)} | ${updated(sync.builtInVariables)} | ${deleted(sync.builtInVariables)} | ${skipped(sync.builtInVariables)} |\\n`;
+          md += `| Clients | ${created(sync.clients)} | ${updated(sync.clients)} | ${deleted(sync.clients)} | ${skipped(sync.clients)} |\\n`;
+          md += `| Transformations | ${created(sync.transformations)} | ${updated(sync.transformations)} | ${deleted(sync.transformations)} | ${skipped(sync.transformations)} |\\n`;
           md += `| Triggers | ${created(sync.triggers)} | ${updated(sync.triggers)} | ${deleted(sync.triggers)} | ${skipped(sync.triggers)} |\\n`;
           md += `| Zones | ${created(sync.zones)} | ${updated(sync.zones)} | ${deleted(sync.zones)} | ${skipped(sync.zones)} |\\n`;
           md += `| Folders | ${created(sync.folders)} | ${updated(sync.folders)} | ${deleted(sync.folders)} | ${skipped(sync.folders)} |\\n`;
