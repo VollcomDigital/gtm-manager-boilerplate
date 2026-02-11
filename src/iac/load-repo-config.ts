@@ -51,6 +51,21 @@ function mergeByName<T extends { name: string }>(base: T[], overlay: T[]): T[] {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function mergeStringSet(base: string[], overlay: string[]): string[] {
+  const out = new Map<string, string>();
+  for (const v of base) {
+    const k = lower(v);
+    if (!k) continue;
+    out.set(k, v);
+  }
+  for (const v of overlay) {
+    const k = lower(v);
+    if (!k) continue;
+    out.set(k, v);
+  }
+  return [...out.values()].sort((a, b) => a.localeCompare(b));
+}
+
 function mergeWorkspace(base: unknown, overlay: unknown): unknown {
   if (!isRecord(base) || !isRecord(overlay)) return overlay;
 
@@ -59,6 +74,16 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
   // workspaceName: overlay wins if present
   if (typeof overlay.workspaceName === "string" && overlay.workspaceName.trim()) {
     out.workspaceName = overlay.workspaceName;
+  }
+
+  // builtInVariableTypes: union/merge if provided
+  if (Array.isArray(overlay.builtInVariableTypes)) {
+    const baseList = Array.isArray(base.builtInVariableTypes) ? (base.builtInVariableTypes as unknown[]) : [];
+    const overlayList = overlay.builtInVariableTypes as unknown[];
+    out.builtInVariableTypes = mergeStringSet(
+      baseList.filter((v): v is string => typeof v === "string"),
+      overlayList.filter((v): v is string => typeof v === "string")
+    );
   }
 
   // Lists: merge by name if provided
@@ -137,6 +162,8 @@ function finalizeRepoConfig(partial: { defaults?: { workspaceName?: string }; co
       target: c.target,
       workspace: {
         workspaceName,
+        builtInVariableTypes:
+          (c.workspace as unknown as { builtInVariableTypes?: unknown[] } | undefined)?.builtInVariableTypes ?? [],
         folders: (c.workspace as unknown as { folders?: unknown[] } | undefined)?.folders ?? [],
         tags: (c.workspace as unknown as { tags?: unknown[] } | undefined)?.tags ?? [],
         triggers: (c.workspace as unknown as { triggers?: unknown[] } | undefined)?.triggers ?? [],

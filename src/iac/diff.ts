@@ -81,6 +81,7 @@ export interface EntityDiff {
 }
 
 export interface WorkspaceDiff {
+  builtInVariables: EntityDiff;
   folders: EntityDiff;
   tags: EntityDiff;
   triggers: EntityDiff;
@@ -90,6 +91,7 @@ export interface WorkspaceDiff {
 }
 
 export interface WorkspaceSnapshot {
+  builtInVariables: unknown[];
   folders: unknown[];
   tags: unknown[];
   triggers: unknown[];
@@ -140,6 +142,43 @@ function diffByName(desired: Array<{ name: string }>, current: unknown[]): Entit
   return { create, update, delete: del };
 }
 
+function diffStringSet(desired: string[], current: unknown[]): EntityDiff {
+  const desiredByLower = new Map<string, string>();
+  for (const v of desired) {
+    const key = v.trim().toLowerCase();
+    if (key) desiredByLower.set(key, v);
+  }
+
+  const currentByLower = new Map<string, string>();
+  for (const v of current) {
+    let raw: string | undefined;
+    if (typeof v === "string") {
+      raw = v;
+    } else if (isRecord(v) && typeof v.type === "string") {
+      // Support passing API objects like Schema$BuiltInVariable.
+      raw = v.type;
+    }
+    if (!raw) continue;
+    const key = raw.trim().toLowerCase();
+    if (key) currentByLower.set(key, raw);
+  }
+
+  const create: string[] = [];
+  const update: string[] = [];
+  const del: string[] = [];
+
+  for (const [k, v] of desiredByLower.entries()) {
+    if (!currentByLower.has(k)) create.push(v);
+  }
+  for (const [k, v] of currentByLower.entries()) {
+    if (!desiredByLower.has(k)) del.push(v);
+  }
+
+  create.sort();
+  del.sort();
+  return { create, update, delete: del };
+}
+
 /**
  * Computes a simple name-based diff between desired state and current workspace state.
  *
@@ -149,6 +188,7 @@ function diffByName(desired: Array<{ name: string }>, current: unknown[]): Entit
  */
 export function diffWorkspace(desired: WorkspaceDesiredState, current: WorkspaceSnapshot): WorkspaceDiff {
   return {
+    builtInVariables: diffStringSet(desired.builtInVariableTypes, current.builtInVariables),
     folders: diffByName(desired.folders, current.folders),
     tags: diffByName(desired.tags, current.tags),
     triggers: diffByName(desired.triggers, current.triggers),

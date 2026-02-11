@@ -748,6 +748,40 @@ export class GtmClient {
   }
 
   // ----------------------------
+  // Built-in Variables (enable/disable)
+  // ----------------------------
+  async listEnabledBuiltInVariables(workspacePath: string): Promise<tagmanager_v2.Schema$BuiltInVariable[]> {
+    return await this.listAllPages("GTM built_in_variables.list", async (pageToken) => {
+      const data = await this.request("GTM built_in_variables.list", () =>
+        this.api.accounts.containers.workspaces.built_in_variables.list(
+          pageToken === undefined ? { parent: workspacePath } : { parent: workspacePath, pageToken }
+        )
+      );
+      return { items: data.builtInVariable ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async enableBuiltInVariables(workspacePath: string, types: string[]): Promise<tagmanager_v2.Schema$BuiltInVariable[]> {
+    if (!types.length) return [];
+    const res = await this.requestWithRetry(
+      "GTM built_in_variables.create",
+      () => this.api.accounts.containers.workspaces.built_in_variables.create({ parent: workspacePath, type: types }),
+      "write"
+    );
+    return res.builtInVariable ?? [];
+  }
+
+  async disableBuiltInVariables(workspacePath: string, types: string[]): Promise<void> {
+    if (!types.length) return;
+    const path = `${this.normalizePath(workspacePath)}/built_in_variables`;
+    await this.requestWithRetry(
+      "GTM built_in_variables.delete",
+      () => this.api.accounts.containers.workspaces.built_in_variables.delete({ path, type: types }),
+      "write"
+    );
+  }
+
+  // ----------------------------
   // Zones
   // ----------------------------
   async listZones(workspacePath: string): Promise<tagmanager_v2.Schema$Zone[]> {

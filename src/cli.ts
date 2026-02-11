@@ -568,6 +568,10 @@ async function exportWorkspaceSnapshot(
 
   const desiredLike = {
     workspaceName,
+    builtInVariableTypes: snapshot.builtInVariables
+      .map((v) => v.type)
+      .filter((v): v is string => typeof v === "string" && v.trim().length)
+      .sort((a, b) => a.localeCompare(b)),
     folders: snapshot.folders.map((f) => normalizeForDiff(f)),
     tags: snapshot.tags.map((t) => normalizeForDiff(t)),
     triggers: snapshot.triggers.map((t) => normalizeForDiff(t)),
@@ -604,6 +608,7 @@ async function diffWorkspaceFromConfig(
   const diff = diffWorkspace(desired, snapshot);
 
   if (options.ignoreDeletes) {
+    diff.builtInVariables.delete = [];
     diff.folders.delete = [];
     diff.tags.delete = [];
     diff.triggers.delete = [];
@@ -612,7 +617,7 @@ async function diffWorkspaceFromConfig(
     diff.zones.delete = [];
   }
 
-  const hasDrift = [diff.folders, diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
+  const hasDrift = [diff.builtInVariables, diff.folders, diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
     (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
   );
 
@@ -671,6 +676,7 @@ async function diffRepoFromConfig(
       const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
       const diff = diffWorkspace(c.workspace, snapshot);
       if (options.ignoreDeletes) {
+        diff.builtInVariables.delete = [];
         diff.folders.delete = [];
         diff.tags.delete = [];
         diff.triggers.delete = [];
@@ -679,7 +685,7 @@ async function diffRepoFromConfig(
         diff.zones.delete = [];
       }
 
-      const drift = [diff.folders, diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
+      const drift = [diff.builtInVariables, diff.folders, diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
         (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
       );
       if (drift) hadDrift = true;

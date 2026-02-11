@@ -154,6 +154,7 @@ export interface SyncWorkspaceResult {
   workspacePath: string;
   templates: EntitySyncSummary;
   variables: EntitySyncSummary;
+  builtInVariables: EntitySyncSummary;
   triggers: EntitySyncSummary;
   zones: EntitySyncSummary;
   folders: EntitySyncSummary;
@@ -197,6 +198,7 @@ export async function syncWorkspace(
     workspacePath,
     templates: emptySummary(),
     variables: emptySummary(),
+    builtInVariables: emptySummary(),
     triggers: emptySummary(),
     zones: emptySummary(),
     folders: emptySummary(),
@@ -359,6 +361,60 @@ export async function syncWorkspace(
   }
 
   // ----------------------------
+  // Built-in Variables (enable/disable)
+  // ----------------------------
+  const currentBuiltInTypesByLower = new Map<string, string>();
+  for (const v of snapshot.builtInVariables) {
+    const t = v.type ?? undefined;
+    if (typeof t === "string" && t.trim()) {
+      currentBuiltInTypesByLower.set(lower(t), t);
+    }
+    const n = v.name ?? undefined;
+    if (typeof n === "string" && n.trim()) {
+      availableVariableNames.add(lower(n));
+    }
+  }
+
+  const desiredBuiltInTypesByLower = new Map<string, string>();
+  for (const t of desired.builtInVariableTypes) {
+    const raw = t.trim();
+    if (!raw) continue;
+    desiredBuiltInTypesByLower.set(lower(raw), raw);
+  }
+
+  const toEnable: string[] = [];
+  for (const [k, raw] of desiredBuiltInTypesByLower.entries()) {
+    if (!currentBuiltInTypesByLower.has(k)) {
+      toEnable.push(raw);
+    }
+  }
+
+  const toDisable: string[] = [];
+  if (options.deleteMissing) {
+    for (const [k, raw] of currentBuiltInTypesByLower.entries()) {
+      if (!desiredBuiltInTypesByLower.has(k)) {
+        toDisable.push(raw);
+      }
+    }
+  }
+
+  toEnable.sort();
+  toDisable.sort();
+
+  if (toEnable.length) {
+    res.builtInVariables.created.push(...toEnable);
+    if (!options.dryRun) {
+      await gtm.enableBuiltInVariables(workspacePath, toEnable);
+    }
+  }
+  if (toDisable.length) {
+    res.builtInVariables.deleted.push(...toDisable);
+    if (!options.dryRun) {
+      await gtm.disableBuiltInVariables(workspacePath, toDisable);
+    }
+  }
+
+  // ----------------------------
   // Triggers
   // ----------------------------
   const currentTriggersByName = new Map<string, tagmanager_v2.Schema$Trigger>();
@@ -502,13 +558,15 @@ export async function syncWorkspace(
   }
 
   if (options.validateVariableRefs) {
-    const refs = collectVariableReferencesFromValues([...desired.tags, ...desired.zones]);
+    const refs = collectVariableReferencesFromValues([...desired.tags, ...desired.triggers, ...desired.zones]);
     for (const refName of refs) {
       const k = lower(refName);
       if (!availableVariableNames.has(k)) {
-        // NOTE: This is a best-effort check. Built-in variables are not returned
-        // by `workspaces.variables.list`, so some warnings may be benign.
-        res.warnings.push(`Config references variable "{{${refName}}}" not found in workspace variables list.`);
+        // NOTE: Best-effort check. We include enabled built-in variables, but do
+        // not know the full universe of built-ins that could exist in a container.
+        res.warnings.push(
+          `Config references variable "{{${refName}}}" not found in workspace variables or enabled built-in variables.`
+        );
       }
     }
     res.warnings.sort();
@@ -677,7 +735,7 @@ export async function syncWorkspace(
   }
 
   // Sort for stable output.
-  for (const summary of [res.templates, res.variables, res.triggers, res.zones, res.tags, res.folders]) {
+  for (const summary of [res.templates, res.variables, res.builtInVariables, res.triggers, res.zones, res.tags, res.folders]) {
     summary.created.sort();
     summary.updated.sort();
     summary.deleted.sort();

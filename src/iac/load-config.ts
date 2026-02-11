@@ -102,6 +102,21 @@ function mergeByName<T extends { name: string }>(base: T[], overlay: T[]): T[] {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function mergeStringSet(base: string[], overlay: string[]): string[] {
+  const out = new Map<string, string>();
+  for (const v of base) {
+    const k = v.trim().toLowerCase();
+    if (!k) continue;
+    out.set(k, v);
+  }
+  for (const v of overlay) {
+    const k = v.trim().toLowerCase();
+    if (!k) continue;
+    out.set(k, v);
+  }
+  return [...out.values()].sort((a, b) => a.localeCompare(b));
+}
+
 function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): WorkspaceDesiredState {
   const [first, ...rest] = parts;
   if (!first) {
@@ -110,6 +125,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
 
   let out: WorkspaceDesiredState = {
     workspaceName: first.workspaceName,
+    builtInVariableTypes: first.builtInVariableTypes ?? [],
     folders: first.folders ?? [],
     tags: first.tags ?? [],
     triggers: first.triggers ?? [],
@@ -122,6 +138,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
     if (p.workspaceName !== out.workspaceName) {
       throw new Error(`workspaceName mismatch across overlays: "${out.workspaceName}" vs "${p.workspaceName}"`);
     }
+    if (p.builtInVariableTypes) out.builtInVariableTypes = mergeStringSet(out.builtInVariableTypes, p.builtInVariableTypes);
     if (p.folders) out.folders = mergeByName(out.folders, p.folders);
     if (p.tags) out.tags = mergeByName(out.tags, p.tags);
     if (p.triggers) out.triggers = mergeByName(out.triggers, p.triggers);
