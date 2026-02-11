@@ -135,7 +135,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 ## Phase 5 — Extended Coverage (GTM Free + GTM 360) & Hardening
 
 ### Expand GTM resource coverage (CRUD + diff/sync)
-- [ ] Folders (and optional folder membership management)
+- [x] Folders (and optional folder membership management)
 - [ ] Environments (create/update/delete + promote publish flows)
 - [ ] Built-in variables (enable/disable + revert)
 - [x] Zones (GTM 360) — CRUD + diff/sync (already supported)
