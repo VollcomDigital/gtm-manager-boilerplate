@@ -208,6 +208,22 @@ This repo ships a `gtm-diff` workflow that is **skipped by default** unless you 
 
 When configured, PRs will run `diff-workspace --fail-on-drift` and upload `gtm.diff.json` as an artifact.
 
+### GitHub Actions: optional GTM sync + publish
+This repo also ships a `gtm-sync` workflow:
+- `workflow_dispatch` supports:
+  - running `sync-workspace` (optionally `--delete-missing`)
+  - optionally creating + publishing a container version
+- `push` to `main` is supported but **opt-in** via repo variable `GTM_SYNC_ON_PUSH=true`.
+
+Required secrets:
+- `GTM_SERVICE_ACCOUNT_JSON_B64`
+- `GTM_ACCOUNT_ID`
+- `GTM_CONTAINER_ID`
+
+Required vars for push-based sync:
+- `GTM_WORKSPACE_NAME`
+- `GTM_DESIRED_CONFIG_PATH`
+
 ### Example automation script
 `src/index.ts` demonstrates:
 - authenticating

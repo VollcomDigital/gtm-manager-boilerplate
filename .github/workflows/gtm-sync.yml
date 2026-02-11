@@ -1,0 +1,284 @@
+name: gtm-sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      workspace_name:
+        description: "GTM workspace name (must exist or will be created)"
+        required: true
+        default: "Automation-Test"
+        type: string
+      desired_config_path:
+        description: "Path to desired workspace JSON config in repo"
+        required: true
+        default: "desired.workspace.json"
+        type: string
+      delete_missing:
+        description: "Delete entities not present in desired config"
+        required: true
+        default: false
+        type: boolean
+      publish:
+        description: "Create + publish a container version after sync"
+        required: true
+        default: false
+        type: boolean
+      version_name:
+        description: "Container version name (only if publish=true)"
+        required: false
+        default: "IaC Release"
+        type: string
+      version_notes:
+        description: "Container version notes (only if publish=true)"
+        required: false
+        default: "Automated publish from GitHub Actions"
+        type: string
+      dry_run:
+        description: "Do not perform mutations (prints intended actions)"
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+
+jobs:
+  sync_dispatch:
+    runs-on: ubuntu-latest
+
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' &&
+        secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' &&
+        secrets.GTM_ACCOUNT_ID != '' &&
+        secrets.GTM_CONTAINER_ID != ''
+      }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Write service account key
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
+          echo "Wrote gtm-service-account.json"
+
+      - name: Sync workspace
+        env:
+          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
+          GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
+          GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
+          LOG_FORMAT: json
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE_NAME="${{ inputs.workspace_name }}"
+          CONFIG_PATH="${{ inputs.desired_config_path }}"
+
+          EXTRA_ARGS=()
+          if [[ "${{ inputs.delete_missing }}" == "true" ]]; then
+            EXTRA_ARGS+=(--delete-missing --confirm)
+          fi
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            EXTRA_ARGS+=(--dry-run)
+          fi
+
+          npm run cli -- sync-workspace \
+            --account-id "$GTM_ACCOUNT_ID" \
+            --container-id "$GTM_CONTAINER_ID" \
+            --workspace-name "$WORKSPACE_NAME" \
+            --config "$CONFIG_PATH" \
+            --json \
+            "${EXTRA_ARGS[@]}" \
+            > gtm.sync.json
+
+      - name: Create container version (optional)
+        if: ${{ inputs.publish == true && inputs.dry_run == false }}
+        env:
+          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
+          GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
+          GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
+          LOG_FORMAT: json
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE_NAME="${{ inputs.workspace_name }}"
+          npm run cli -- create-version \
+            --account-id "$GTM_ACCOUNT_ID" \
+            --container-id "$GTM_CONTAINER_ID" \
+            --workspace-name "$WORKSPACE_NAME" \
+            --version-name "${{ inputs.version_name }}" \
+            --notes "${{ inputs.version_notes }}" \
+            --json \
+            > gtm.create-version.json
+
+          node -e 'const fs=require("node:fs"); const j=JSON.parse(fs.readFileSync("gtm.create-version.json","utf8")); const p=j?.containerVersion?.path; if(!p) { console.error("Missing containerVersion.path"); process.exit(2); } fs.writeFileSync("gtm.version-path.txt", p);'
+
+      - name: Publish container version (optional)
+        if: ${{ inputs.publish == true && inputs.dry_run == false }}
+        env:
+          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
+          LOG_FORMAT: json
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_PATH="$(cat gtm.version-path.txt)"
+          npm run cli -- publish-version --version-path "$VERSION_PATH" --json > gtm.publish-version.json
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+          const readJson = (p) => {
+            try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
+          };
+
+          const sync = readJson("gtm.sync.json");
+          const created = (x) => (x?.created?.length ?? 0);
+          const updated = (x) => (x?.updated?.length ?? 0);
+          const deleted = (x) => (x?.deleted?.length ?? 0);
+          const skipped = (x) => (x?.skipped?.length ?? 0);
+
+          let md = "## GTM Sync\\n\\n";
+          if (sync) {
+            md += `Workspace: \`${sync.workspacePath ?? "?"}\`\\n\\n`;
+            md += "| Entity | Created | Updated | Deleted | Skipped |\\n";
+            md += "|---|---:|---:|---:|---:|\\n";
+            md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
+            md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
+            md += `| Triggers | ${created(sync.triggers)} | ${updated(sync.triggers)} | ${deleted(sync.triggers)} | ${skipped(sync.triggers)} |\\n`;
+            md += `| Tags | ${created(sync.tags)} | ${updated(sync.tags)} | ${deleted(sync.tags)} | ${skipped(sync.tags)} |\\n`;
+            md += "\\n";
+          } else {
+            md += "_No sync output found._\\n\\n";
+          }
+
+          const publish = readJson("gtm.publish-version.json");
+          if (publish?.containerVersion?.path) {
+            md += "## Published Version\\n\\n";
+            md += `Path: \`${publish.containerVersion.path}\`\\n\\n`;
+            md += `Name: \`${publish.containerVersion.name ?? "?"}\`\\n\\n`;
+            md += `VersionId: \`${publish.containerVersion.containerVersionId ?? "?"}\`\\n\\n`;
+            md += `Timestamp: \`${new Date().toISOString()}\`\\n\\n`;
+          }
+
+          fs.appendFileSync(summaryPath, md);
+          NODE
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtm-sync-artifacts
+          path: |
+            gtm.sync.json
+            gtm.create-version.json
+            gtm.publish-version.json
+            gtm.version-path.txt
+
+  sync_push:
+    runs-on: ubuntu-latest
+
+    # Opt-in required for automatic sync on main pushes.
+    if: >-
+      ${{
+        github.event_name == 'push' &&
+        vars.GTM_SYNC_ON_PUSH == 'true' &&
+        secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' &&
+        secrets.GTM_ACCOUNT_ID != '' &&
+        secrets.GTM_CONTAINER_ID != '' &&
+        vars.GTM_WORKSPACE_NAME != '' &&
+        vars.GTM_DESIRED_CONFIG_PATH != ''
+      }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Write service account key
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
+          echo "Wrote gtm-service-account.json"
+
+      - name: Sync workspace (push)
+        env:
+          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
+          GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
+          GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
+          GTM_WORKSPACE_NAME: ${{ vars.GTM_WORKSPACE_NAME }}
+          GTM_DESIRED_CONFIG_PATH: ${{ vars.GTM_DESIRED_CONFIG_PATH }}
+          LOG_FORMAT: json
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run cli -- sync-workspace \
+            --account-id "$GTM_ACCOUNT_ID" \
+            --container-id "$GTM_CONTAINER_ID" \
+            --workspace-name "$GTM_WORKSPACE_NAME" \
+            --config "$GTM_DESIRED_CONFIG_PATH" \
+            --json \
+            > gtm.sync.json
+
+      - name: Upload artifacts (push)
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtm-sync-push-artifacts
+          path: gtm.sync.json
+
+      - name: Write job summary (push)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+          const readJson = (p) => {
+            try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
+          };
+          const sync = readJson("gtm.sync.json");
+          if (!sync) {
+            fs.appendFileSync(summaryPath, "## GTM Sync\\n\\n_No sync output found._\\n");
+            process.exit(0);
+          }
+          const created = (x) => (x?.created?.length ?? 0);
+          const updated = (x) => (x?.updated?.length ?? 0);
+          const deleted = (x) => (x?.deleted?.length ?? 0);
+          const skipped = (x) => (x?.skipped?.length ?? 0);
+          let md = "## GTM Sync (push)\\n\\n";
+          md += `Workspace: \`${sync.workspacePath ?? "?"}\`\\n\\n`;
+          md += "| Entity | Created | Updated | Deleted | Skipped |\\n";
+          md += "|---|---:|---:|---:|---:|\\n";
+          md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
+          md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
+          md += `| Triggers | ${created(sync.triggers)} | ${updated(sync.triggers)} | ${deleted(sync.triggers)} | ${skipped(sync.triggers)} |\\n`;
+          md += `| Tags | ${created(sync.tags)} | ${updated(sync.tags)} | ${deleted(sync.tags)} | ${skipped(sync.tags)} |\\n`;
+          md += `\\nTimestamp: \`${new Date().toISOString()}\`\\n`;
+          fs.appendFileSync(summaryPath, md);
+          NODE
+

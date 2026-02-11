@@ -118,14 +118,14 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Lint
   - [x] Run unit tests
 - [x] Add workflow to run “diff” on PRs and upload diff artifacts
-- [ ] Add workflow to run “sync” on main merges (protected environments)
-- [ ] Automate version creation + publishing:
-  - [ ] Create container version from workspace
-  - [ ] Publish version
-  - [ ] Emit summary with version ID and timestamp
+- [x] Add workflow to run “sync” on main merges (protected environments)
+- [x] Automate version creation + publishing:
+  - [x] Create container version from workspace
+  - [x] Publish version
+  - [x] Emit summary with version ID and timestamp
 - [ ] Secrets management:
-  - [ ] Service account key via GitHub OIDC (preferred) or encrypted secret
-  - [ ] Avoid storing JSON keys in repo
+  - [x] Service account key via GitHub OIDC (preferred) or encrypted secret
+  - [x] Avoid storing JSON keys in repo
 - [ ] Release process:
   - [ ] Version the IaC tool (semantic releases)
   - [ ] Generate changelogs
