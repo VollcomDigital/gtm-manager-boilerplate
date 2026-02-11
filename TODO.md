@@ -8,16 +8,16 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ## Phase 1 — Foundation & Auth
 
-- [ ] Initialize Node.js + TypeScript project (package.json, tsconfig, linting)
-- [ ] Define environment conventions (.env / .env.example) for:
-  - [ ] Service account key path (recommended for automation)
-  - [ ] Target account/container selectors (IDs preferred over names)
-- [ ] Implement GoogleAuth initialization (Service Account JSON key path via env)
-- [ ] Build GTM API v2 client wrapper (initial skeleton)
-- [ ] Add CLI/entrypoint to:
-  - [ ] Authenticate
-  - [ ] List accounts
-  - [ ] List containers for a chosen account
+- [x] Initialize Node.js + TypeScript project (package.json, tsconfig, linting)
+- [x] Define environment conventions (.env / .env.example) for:
+  - [x] Service account key path (recommended for automation)
+  - [x] Target account/container selectors (IDs preferred over names)
+- [x] Implement GoogleAuth initialization (Service Account JSON key path via env)
+- [x] Build GTM API v2 client wrapper (initial skeleton)
+- [x] Add CLI/entrypoint to:
+  - [x] Authenticate
+  - [x] List accounts
+  - [x] List containers for a chosen account
 - [ ] Add basic logging strategy (structured JSON logs recommended for CI)
 - [ ] Document required IAM permissions + how to grant container access to the service account
 
@@ -26,39 +26,39 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 ## Phase 2 — Core CRUD Operations
 
 ### Workspace operations
-- [ ] Get/create workspace by name (idempotent)
+- [x] Get/create workspace by name (idempotent)
 - [ ] Workspace cleanup strategy (delete/archival) for CI runs
-- [ ] Validate GTM paths and IDs (accounts/*/containers/*/workspaces/*)
+- [x] Validate GTM paths and IDs (accounts/*/containers/*/workspaces/*)
 
 ### Tags / Triggers / Variables (CRUD)
-- [ ] Implement `get` by ID and `get` by name for:
-  - [ ] Tags
-  - [ ] Triggers
-  - [ ] Variables
-- [ ] Implement `create` (idempotent by name) for:
-  - [ ] Tags
-  - [ ] Triggers
-  - [ ] Variables
-- [ ] Implement `update` (patch) for:
-  - [ ] Tags
-  - [ ] Triggers
-  - [ ] Variables
-- [ ] Implement `delete` for:
-  - [ ] Tags
-  - [ ] Triggers
-  - [ ] Variables
-- [ ] Add pagination handling and retry/backoff for GTM API calls
-- [ ] Add Zod validation for payloads before sending to the API
+- [x] Implement `get` by ID and `get` by name for:
+  - [x] Tags
+  - [x] Triggers
+  - [x] Variables
+- [x] Implement `create` (idempotent by name) for:
+  - [x] Tags
+  - [x] Triggers
+  - [x] Variables
+- [x] Implement `update` (API update/PUT) for:
+  - [x] Tags
+  - [x] Triggers
+  - [x] Variables
+- [x] Implement `delete` for:
+  - [x] Tags
+  - [x] Triggers
+  - [x] Variables
+- [x] Add pagination handling and retry/backoff for GTM API calls
+- [x] Add Zod validation for payloads before sending to the API
 
 ### Custom Templates (CRUD)
-- [ ] Implement list/get/create/update/delete for:
-  - [ ] Tag templates
-  - [ ] Variable templates
+- [x] Implement list/get/create/update/delete for:
+  - [x] Tag templates
+  - [x] Variable templates
 - [ ] Template versioning strategy (pin content hashes)
 
 ### Versioning & publishing (required to apply workspace edits)
-- [ ] Create container version from workspace
-- [ ] Publish a container version
+- [x] Create container version from workspace
+- [x] Publish a container version
 - [ ] Rollback strategy (re-publish previous version)
 
 ### Tests & safety checks

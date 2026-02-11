@@ -7,11 +7,12 @@ import { z } from "zod";
  * Scopes for GTM API v2.
  *
  * NOTE: For Infrastructure-as-Code write operations you typically need
- * `tagmanager.edit.containers`. You may reduce to readonly scopes for purely
- * reporting workflows.
+ * `tagmanager.edit.containers` and, if you publish versions, `tagmanager.publish`.
+ * You may reduce scopes for purely reporting workflows.
  */
 export const GTM_SCOPES: readonly string[] = [
-  "https://www.googleapis.com/auth/tagmanager.edit.containers"
+  "https://www.googleapis.com/auth/tagmanager.edit.containers",
+  "https://www.googleapis.com/auth/tagmanager.publish"
 ];
 
 const EnvSchema = z.object({

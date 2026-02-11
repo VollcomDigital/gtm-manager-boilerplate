@@ -392,6 +392,10 @@ export class GtmClient {
     return await this.request("GTM tags.get", () => this.api.accounts.containers.workspaces.tags.get({ path: tagPath }));
   }
 
+  async getTagById(workspacePath: string, tagId: string): Promise<tagmanager_v2.Schema$Tag> {
+    return await this.getTag(this.childPath(workspacePath, "tags", tagId));
+  }
+
   async updateTag(
     tagPath: string,
     tag: GtmTag,
@@ -409,8 +413,21 @@ export class GtmClient {
     return await this.requestWithRetry("GTM tags.update", () => this.api.accounts.containers.workspaces.tags.update(params), "write");
   }
 
+  async updateTagById(
+    workspacePath: string,
+    tagId: string,
+    tag: GtmTag,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Tag> {
+    return await this.updateTag(this.childPath(workspacePath, "tags", tagId), tag, options);
+  }
+
   async deleteTag(tagPath: string): Promise<void> {
     await this.requestWithRetry("GTM tags.delete", () => this.api.accounts.containers.workspaces.tags.delete({ path: tagPath }), "write");
+  }
+
+  async deleteTagById(workspacePath: string, tagId: string): Promise<void> {
+    await this.deleteTag(this.childPath(workspacePath, "tags", tagId));
   }
 
   async findTagByName(workspacePath: string, tagName: string): Promise<tagmanager_v2.Schema$Tag | undefined> {
@@ -482,6 +499,10 @@ export class GtmClient {
     );
   }
 
+  async getTriggerById(workspacePath: string, triggerId: string): Promise<tagmanager_v2.Schema$Trigger> {
+    return await this.getTrigger(this.childPath(workspacePath, "triggers", triggerId));
+  }
+
   async updateTrigger(
     triggerPath: string,
     trigger: GtmTrigger,
@@ -503,12 +524,25 @@ export class GtmClient {
     );
   }
 
+  async updateTriggerById(
+    workspacePath: string,
+    triggerId: string,
+    trigger: GtmTrigger,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Trigger> {
+    return await this.updateTrigger(this.childPath(workspacePath, "triggers", triggerId), trigger, options);
+  }
+
   async deleteTrigger(triggerPath: string): Promise<void> {
     await this.requestWithRetry(
       "GTM triggers.delete",
       () => this.api.accounts.containers.workspaces.triggers.delete({ path: triggerPath }),
       "write"
     );
+  }
+
+  async deleteTriggerById(workspacePath: string, triggerId: string): Promise<void> {
+    await this.deleteTrigger(this.childPath(workspacePath, "triggers", triggerId));
   }
 
   async findTriggerByName(workspacePath: string, triggerName: string): Promise<tagmanager_v2.Schema$Trigger | undefined> {
@@ -580,6 +614,10 @@ export class GtmClient {
     );
   }
 
+  async getVariableById(workspacePath: string, variableId: string): Promise<tagmanager_v2.Schema$Variable> {
+    return await this.getVariable(this.childPath(workspacePath, "variables", variableId));
+  }
+
   async updateVariable(
     variablePath: string,
     variable: GtmVariable,
@@ -601,12 +639,25 @@ export class GtmClient {
     );
   }
 
+  async updateVariableById(
+    workspacePath: string,
+    variableId: string,
+    variable: GtmVariable,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Variable> {
+    return await this.updateVariable(this.childPath(workspacePath, "variables", variableId), variable, options);
+  }
+
   async deleteVariable(variablePath: string): Promise<void> {
     await this.requestWithRetry(
       "GTM variables.delete",
       () => this.api.accounts.containers.workspaces.variables.delete({ path: variablePath }),
       "write"
     );
+  }
+
+  async deleteVariableById(workspacePath: string, variableId: string): Promise<void> {
+    await this.deleteVariable(this.childPath(workspacePath, "variables", variableId));
   }
 
   async findVariableByName(workspacePath: string, variableName: string): Promise<tagmanager_v2.Schema$Variable | undefined> {
@@ -684,6 +735,10 @@ export class GtmClient {
     );
   }
 
+  async getTemplateById(workspacePath: string, templateId: string): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    return await this.getTemplate(this.childPath(workspacePath, "templates", templateId));
+  }
+
   async updateTemplate(
     templatePath: string,
     template: GtmCustomTemplate,
@@ -705,12 +760,25 @@ export class GtmClient {
     );
   }
 
+  async updateTemplateById(
+    workspacePath: string,
+    templateId: string,
+    template: GtmCustomTemplate,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$CustomTemplate> {
+    return await this.updateTemplate(this.childPath(workspacePath, "templates", templateId), template, options);
+  }
+
   async deleteTemplate(templatePath: string): Promise<void> {
     await this.requestWithRetry(
       "GTM templates.delete",
       () => this.api.accounts.containers.workspaces.templates.delete({ path: templatePath }),
       "write"
     );
+  }
+
+  async deleteTemplateById(workspacePath: string, templateId: string): Promise<void> {
+    await this.deleteTemplate(this.childPath(workspacePath, "templates", templateId));
   }
 
   async findTemplateByName(
