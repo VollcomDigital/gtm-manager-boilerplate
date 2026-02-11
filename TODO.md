@@ -74,8 +74,8 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ### Desired-state schema
 - [x] Design a local desired-state format (JSON/YAML):
-  - [ ] Container metadata + labels
-  - [ ] Workspaces (logical grouping, or always single “iac” workspace)
+  - [x] Container metadata + labels
+  - [x] Workspaces (logical grouping, or always single “iac” workspace)
   - [x] Tags
   - [x] Triggers
   - [x] Variables

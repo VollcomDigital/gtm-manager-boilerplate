@@ -207,6 +207,48 @@ Notes:
 - You can pass **overlays** by providing a comma-separated list to `--config`, e.g. `--config ./base.yml,./prod.yml` (later files override earlier ones by entity name).
 - Custom templates can optionally be pinned with `__sha256` (SHA-256 of `templateData`). Use `npm run cli -- hash-config --config <file> --json` to compute hashes.
 
+### Multi-container repo config (Phase 3)
+For managing multiple GTM containers from a single repo config:
+
+```yaml
+# gtm.repo.yml
+schemaVersion: 1
+defaults:
+  workspaceName: iac
+
+containers:
+  - key: site_a
+    labels:
+      env: prod
+      region: eu
+    target:
+      accountId: "1234567890"
+      containerId: "51955729"   # numeric containerId (preferred)
+      # OR: containerPublicId: "GTM-XXXXXXX"
+    workspace:
+      workspaceName: iac
+      triggers:
+        - name: All Pages
+          type: PAGEVIEW
+      tags:
+        - name: "GA4 - Configuration"
+          type: gaawc
+          firingTriggerNames: ["All Pages"] # IaC-only convenience field
+          parameter:
+            - key: measurementId
+              type: TEMPLATE
+              value: "G-XXXXXXXXXX"
+```
+
+Commands:
+```bash
+# Diff all selected containers
+npm run cli -- diff-repo --config ./gtm.repo.yml --labels env=prod --fail-on-drift --json
+
+# Sync all selected containers (dry-run)
+npm run cli -- sync-repo --config ./gtm.repo.yml --container-keys site_a,site_b --dry-run --json
+```
+
 ### GitHub Actions: optional GTM diff on PRs
 This repo ships a `gtm-diff` workflow that is **skipped by default** unless you configure secrets/vars:
 - Secrets:
