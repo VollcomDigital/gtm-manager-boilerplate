@@ -164,9 +164,10 @@ export class GtmClient {
         shouldRetry: isRetryableGoogleApiError
       };
 
-      if (this.logger) {
+      const logger = this.logger;
+      if (logger) {
         retryOptions.onRetry = ({ attempt, delayMs, err }) => {
-          this.logger.warn(`${context} retrying`, {
+          logger.warn(`${context} retrying`, {
             attempt,
             delayMs,
             error: this.formatError(err)
