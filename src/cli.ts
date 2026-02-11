@@ -160,11 +160,11 @@ function matchesLabels(labels: Record<string, string> | undefined, filter: Recor
 }
 
 function toLocator(target: {
-  accountId?: string;
-  accountName?: string;
-  containerId?: string;
-  containerPublicId?: string;
-  containerName?: string;
+  accountId?: string | undefined;
+  accountName?: string | undefined;
+  containerId?: string | undefined;
+  containerPublicId?: string | undefined;
+  containerName?: string | undefined;
 }): AccountContainerLocator {
   return {
     ...(target.accountId ? { accountId: target.accountId } : {}),
