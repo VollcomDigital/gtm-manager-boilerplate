@@ -173,10 +173,18 @@ npm run cli -- ensure-workspace --account-id 1234567890 --container-id 51955729 
 
 # Create a container version from the workspace
 npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --version-name "IaC Release" --notes "Automated publish" --json
+
+# Inspect live (currently published) version
+npm run cli -- live-version --account-id 1234567890 --container-id 51955729 --json
 ```
 
 Optional:
 - Override scopes via `GTM_SCOPES` (comma/space-separated). This is useful for workspace deletion workflows, which typically require `https://www.googleapis.com/auth/tagmanager.delete.containers`.
+
+Rollback strategy:
+- Store previously published `containerVersion.path` values (the CI workflows upload them as artifacts when enabled).
+- To rollback, publish the prior version path:
+  - `npm run cli -- publish-version --version-path accounts/<acct>/containers/<cid>/versions/<vid> --json`
 
 ### IaC snapshot / diff / sync (Phase 3 scaffolding)
 ```bash

@@ -376,6 +376,26 @@ export class GtmClient {
     );
   }
 
+  /**
+   * Returns the currently published ("live") container version.
+   *
+   * @param containerPath API path: `accounts/{accountId}/containers/{containerId}`
+   */
+  async getLiveContainerVersion(containerPath: string): Promise<tagmanager_v2.Schema$ContainerVersion> {
+    return await this.request("GTM versions.live", () =>
+      this.api.accounts.containers.versions.live({ parent: containerPath })
+    );
+  }
+
+  /**
+   * Gets a container version by API path.
+   */
+  async getContainerVersion(containerVersionPath: string): Promise<tagmanager_v2.Schema$ContainerVersion> {
+    return await this.request("GTM versions.get", () =>
+      this.api.accounts.containers.versions.get({ path: containerVersionPath })
+    );
+  }
+
   private async listAllPages<T>(
     context: string,
     fetchPage: (pageToken?: string) => Promise<{ items: T[]; nextPageToken?: string | null | undefined }>

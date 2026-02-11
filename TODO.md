@@ -59,7 +59,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 ### Versioning & publishing (required to apply workspace edits)
 - [x] Create container version from workspace
 - [x] Publish a container version
-- [ ] Rollback strategy (re-publish previous version)
+- [x] Rollback strategy (re-publish previous version)
 
 ### Tests & safety checks
 - [ ] Unit tests for:

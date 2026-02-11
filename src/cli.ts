@@ -81,6 +81,8 @@ Commands:
   list-workspaces --account-id <id> --container-id <id|GTM-XXXX> [--json]
   create-version --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--version-name <name>] [--notes <text>] [--json]
   publish-version --version-path <accounts/.../containers/.../versions/...> [--json]
+  live-version --account-id <id> --container-id <id|GTM-XXXX> [--json]
+  get-version --version-path <accounts/.../containers/.../versions/...> [--json]
   delete-workspace --workspace-path <accounts/.../containers/.../workspaces/...> --confirm
   reset-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --confirm [--json]
   export-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--out <file>] [--json]
@@ -95,6 +97,8 @@ Examples:
   npm run cli -- list-workspaces --account-id 1234567890 --container-id 51955729 --json
   npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --version-name "IaC Release" --notes "Automated publish" --json
   npm run cli -- publish-version --version-path accounts/123/containers/456/versions/7 --json
+  npm run cli -- live-version --account-id 123 --container-id 456 --json
+  npm run cli -- get-version --version-path accounts/123/containers/456/versions/7 --json
   npm run cli -- delete-workspace --workspace-path accounts/123/containers/456/workspaces/999 --confirm
   npm run cli -- reset-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --confirm --json
   npm run cli -- export-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --out ./workspace.snapshot.json
@@ -281,6 +285,29 @@ async function publishVersion(
   const versionName = res.containerVersion?.name ?? "?";
   const versionId = res.containerVersion?.containerVersionId ?? "?";
   console.log(`published versionId=${versionId}\tname=${versionName}\tpath=${versionPath}`);
+}
+
+async function liveVersion(gtm: GtmClient, locator: AccountContainerLocator, asJson: boolean): Promise<void> {
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+  const version = await gtm.getLiveContainerVersion(containerPath);
+
+  if (asJson) {
+    console.log(JSON.stringify(version, null, 2));
+    return;
+  }
+  console.log(
+    `live versionId=${version.containerVersionId ?? "?"}\tname=${version.name ?? "?"}\tpath=${version.path ?? "?"}`
+  );
+}
+
+async function getVersion(gtm: GtmClient, versionPath: string, asJson: boolean): Promise<void> {
+  const version = await gtm.getContainerVersion(versionPath);
+  if (asJson) {
+    console.log(JSON.stringify(version, null, 2));
+    return;
+  }
+  console.log(`versionId=${version.containerVersionId ?? "?"}\tname=${version.name ?? "?"}\tpath=${version.path ?? "?"}`);
 }
 
 async function deleteWorkspace(gtm: GtmClient, workspacePath: string, dryRun: boolean): Promise<void> {
@@ -608,6 +635,43 @@ async function main(): Promise<void> {
       });
 
       await publishVersion(gtm, args.versionPath, asJson, dryRun);
+      return;
+    }
+    case "live-version": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id")
+      });
+
+      await liveVersion(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
+        asJson
+      );
+      return;
+    }
+    case "get-version": {
+      const schema = z
+        .object({
+          versionPath: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        versionPath: getStringFlag(parsed.flags, "version-path")
+      });
+
+      await getVersion(gtm, args.versionPath, asJson);
       return;
     }
     case "delete-workspace": {
