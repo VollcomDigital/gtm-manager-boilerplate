@@ -66,7 +66,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [ ] Diff logic primitives (later reused in Phase 3)
   - [ ] Name-based resolution
   - [ ] Zod schema validations
-- [ ] Add “dry-run” mode for all mutations
+- [x] Add “dry-run” mode for all mutations
 
 ---
 
