@@ -55,7 +55,6 @@ function isJsonFlagSet(flags: Record<string, FlagValue>): boolean {
 
 function printHelp(): void {
   // Keep this minimal and grep-friendly; deeper docs should live in README later.
-  // eslint-disable-next-line no-console
   console.log(`
 GTM IaC CLI (GTM API v2)
 
@@ -82,12 +81,10 @@ function getStringFlag(flags: Record<string, FlagValue>, key: string): string | 
 async function listAccounts(gtm: GtmClient, asJson: boolean): Promise<void> {
   const accounts = await gtm.listAccounts();
   if (asJson) {
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(accounts, null, 2));
     return;
   }
   for (const a of accounts) {
-    // eslint-disable-next-line no-console
     console.log(`${a.name ?? "?"}\taccountId=${a.accountId ?? "?"}`);
   }
 }
@@ -101,12 +98,10 @@ async function listContainers(gtm: GtmClient, locator: { accountId?: string; acc
 
   const containers = await gtm.listContainers(accountId);
   if (asJson) {
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(containers, null, 2));
     return;
   }
   for (const c of containers) {
-    // eslint-disable-next-line no-console
     console.log(`${c.name ?? "?"}\tcontainerId=${c.containerId ?? "?"}\tpublicId=${c.publicId ?? "?"}`);
   }
 }
@@ -121,12 +116,10 @@ async function ensureWorkspace(
   const workspace = await gtm.getOrCreateWorkspace({ accountId, containerId, workspaceName });
 
   if (asJson) {
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(workspace, null, 2));
     return;
   }
 
-  // eslint-disable-next-line no-console
   console.log(`workspaceId=${workspace.workspaceId ?? "?"}\tname=${workspace.name ?? "?"}`);
 }
 
@@ -196,7 +189,6 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err);
-  // eslint-disable-next-line no-console
   console.error(`Fatal: ${msg}`);
   process.exitCode = 1;
 });
