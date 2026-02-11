@@ -73,28 +73,28 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 ## Phase 3 — State Management (IaC)
 
 ### Desired-state schema
-- [ ] Design a local desired-state format (JSON/YAML):
+- [x] Design a local desired-state format (JSON/YAML):
   - [ ] Container metadata + labels
   - [ ] Workspaces (logical grouping, or always single “iac” workspace)
-  - [ ] Tags
-  - [ ] Triggers
-  - [ ] Variables
-  - [ ] Custom templates
-- [ ] Define schema with Zod and generate TypeScript types
+  - [x] Tags
+  - [x] Triggers
+  - [x] Variables
+  - [x] Custom templates
+- [x] Define schema with Zod and generate TypeScript types
 - [ ] Create config loader:
   - [ ] Supports multiple environments (dev/stage/prod)
   - [ ] Supports per-container overlays (base + overrides)
 
 ### Diff engine
-- [ ] Fetch current GTM workspace state (tags/triggers/variables/templates)
+- [x] Fetch current GTM workspace state (tags/triggers/variables/templates)
 - [ ] Normalize API responses into a deterministic canonical form
-- [ ] Compute a semantic diff:
-  - [ ] Additions
-  - [ ] Deletions
-  - [ ] Updates (field-level)
+- [x] Compute a semantic diff:
+  - [x] Additions
+  - [x] Deletions
+  - [x] Updates (field-level)
 - [ ] Diff output:
-  - [ ] Human-readable (console)
-  - [ ] Machine-readable (JSON artifact)
+  - [x] Human-readable (console)
+  - [x] Machine-readable (JSON artifact)
 
 ### Sync engine
 - [ ] Apply changes to the workspace in a safe order:
