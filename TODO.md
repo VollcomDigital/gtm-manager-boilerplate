@@ -64,8 +64,8 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 ### Tests & safety checks
 - [ ] Unit tests for:
   - [ ] Diff logic primitives (later reused in Phase 3)
-  - [ ] Name-based resolution
-  - [ ] Zod schema validations
+  - [x] Name-based resolution
+  - [x] Zod schema validations
 - [x] Add “dry-run” mode for all mutations
 
 ---
