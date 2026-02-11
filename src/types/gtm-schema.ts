@@ -14,7 +14,7 @@ export interface GtmParameter {
   map?: GtmParameter[];
 }
 
-export const zGtmParameter = z.lazy(() =>
+export const zGtmParameter: z.ZodTypeAny = z.lazy(() =>
   z
     .object({
       type: z.string().min(1).optional(),
