@@ -148,7 +148,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 - [x] Optional policy: block sync if live != desired unless `--force`
 
 ### Safety / policy engine
-- [ ] Protected entities (never delete by name/label)
+- [x] Protected entities (never delete by name/label)
 - [ ] Allowlist/denylist by resource type (tags/triggers/vars/templates/zones/...)
 - [ ] Approval gates for destructive operations (deleteMissing + publish)
 
