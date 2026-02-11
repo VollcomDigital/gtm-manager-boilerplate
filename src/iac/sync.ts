@@ -221,6 +221,18 @@ export async function syncWorkspace(
     warnings: []
   };
 
+  const protectedByType = {
+    builtInVariableTypes: new Set(desired.policy.protectedNames.builtInVariableTypes.map(lower)),
+    folders: new Set(desired.policy.protectedNames.folders.map(lower)),
+    clients: new Set(desired.policy.protectedNames.clients.map(lower)),
+    transformations: new Set(desired.policy.protectedNames.transformations.map(lower)),
+    tags: new Set(desired.policy.protectedNames.tags.map(lower)),
+    triggers: new Set(desired.policy.protectedNames.triggers.map(lower)),
+    variables: new Set(desired.policy.protectedNames.variables.map(lower)),
+    templates: new Set(desired.policy.protectedNames.templates.map(lower)),
+    zones: new Set(desired.policy.protectedNames.zones.map(lower))
+  };
+
   // ----------------------------
   // Templates
   // ----------------------------
@@ -290,6 +302,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.templates.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTemplatesByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.templates.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.templates.skipped.push(displayName);
+        res.warnings.push(`Protected template not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.templates.deleted.push(displayName);
       if (!options.dryRun) {
@@ -367,6 +385,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.variables.map((v) => lower(v.name)));
     for (const [nameLowerKey, existing] of currentVariablesByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.variables.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.variables.skipped.push(displayName);
+        res.warnings.push(`Protected variable not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.variables.deleted.push(displayName);
       if (!options.dryRun && existing.variableId) {
@@ -408,6 +432,11 @@ export async function syncWorkspace(
   if (options.deleteMissing) {
     for (const [k, raw] of currentBuiltInTypesByLower.entries()) {
       if (!desiredBuiltInTypesByLower.has(k)) {
+        if (protectedByType.builtInVariableTypes.has(k)) {
+          res.builtInVariables.skipped.push(raw);
+          res.warnings.push(`Protected built-in variable type not disabled: "${raw}"`);
+          continue;
+        }
         toDisable.push(raw);
       }
     }
@@ -478,6 +507,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.clients.map((c) => lower(c.name)));
     for (const [nameLowerKey, existing] of currentClientsByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.clients.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.clients.skipped.push(displayName);
+        res.warnings.push(`Protected client not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.clients.deleted.push(displayName);
       if (!options.dryRun && existing.clientId) {
@@ -537,6 +572,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.transformations.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTransformationsByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.transformations.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.transformations.skipped.push(displayName);
+        res.warnings.push(`Protected transformation not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.transformations.deleted.push(displayName);
       if (!options.dryRun && existing.transformationId) {
@@ -605,6 +646,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.triggers.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTriggersByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.triggers.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.triggers.skipped.push(displayName);
+        res.warnings.push(`Protected trigger not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.triggers.deleted.push(displayName);
       if (!options.dryRun && existing.triggerId) {
@@ -664,6 +711,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.zones.map((z) => lower(z.name)));
     for (const [nameLowerKey, existing] of currentZonesByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.zones.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.zones.skipped.push(displayName);
+        res.warnings.push(`Protected zone not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.zones.deleted.push(displayName);
       if (!options.dryRun && existing.zoneId) {
@@ -765,6 +818,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.tags.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTagsByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.tags.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.tags.skipped.push(displayName);
+        res.warnings.push(`Protected tag not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.tags.deleted.push(displayName);
       if (!options.dryRun && existing.tagId) {
@@ -863,6 +922,12 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.folders.map((f) => lower(f.name)));
     for (const [nameLowerKey, existing] of currentFoldersByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      if (protectedByType.folders.has(nameLowerKey)) {
+        const displayName = existing.name ?? nameLowerKey;
+        res.folders.skipped.push(displayName);
+        res.warnings.push(`Protected folder not deleted: "${displayName}"`);
+        continue;
+      }
       const displayName = existing.name ?? nameLowerKey;
       res.folders.deleted.push(displayName);
       if (!options.dryRun && existing.folderId) {
@@ -888,6 +953,8 @@ export async function syncWorkspace(
     summary.deleted.sort();
     summary.skipped.sort();
   }
+
+  res.warnings.sort();
 
   return res;
 }

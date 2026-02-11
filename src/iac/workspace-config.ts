@@ -10,6 +10,40 @@ import {
   zGtmZone
 } from "../types/gtm-schema";
 
+const EMPTY_PROTECTED_NAMES = {
+  builtInVariableTypes: [],
+  folders: [],
+  clients: [],
+  transformations: [],
+  tags: [],
+  triggers: [],
+  variables: [],
+  templates: [],
+  zones: []
+} as const;
+
+const zWorkspaceProtectedNames = z
+  .object({
+    builtInVariableTypes: z.array(z.string().trim().min(1)).default([]),
+    folders: z.array(z.string().trim().min(1)).default([]),
+    clients: z.array(z.string().trim().min(1)).default([]),
+    transformations: z.array(z.string().trim().min(1)).default([]),
+    tags: z.array(z.string().trim().min(1)).default([]),
+    triggers: z.array(z.string().trim().min(1)).default([]),
+    variables: z.array(z.string().trim().min(1)).default([]),
+    templates: z.array(z.string().trim().min(1)).default([]),
+    zones: z.array(z.string().trim().min(1)).default([])
+  })
+  .strict()
+  .default(EMPTY_PROTECTED_NAMES);
+
+export const zWorkspacePolicy = z
+  .object({
+    protectedNames: zWorkspaceProtectedNames
+  })
+  .strict()
+  .default({ protectedNames: EMPTY_PROTECTED_NAMES });
+
 /**
  * Minimal desired-state schema for a single GTM Workspace.
  *
@@ -19,6 +53,7 @@ import {
 export const zWorkspaceDesiredState = z
   .object({
     workspaceName: z.string().trim().min(1),
+    policy: zWorkspacePolicy,
     builtInVariableTypes: z.array(z.string().trim().min(1)).default([]),
     folders: z.array(zGtmFolder).default([]),
     clients: z.array(zGtmServerClient).default([]),
@@ -42,6 +77,7 @@ export type WorkspaceDesiredState = z.infer<typeof zWorkspaceDesiredState>;
 export const zWorkspaceDesiredStatePartial = z
   .object({
     workspaceName: z.string().trim().min(1),
+    policy: zWorkspacePolicy.optional(),
     builtInVariableTypes: z.array(z.string().trim().min(1)).optional(),
     folders: z.array(zGtmFolder).optional(),
     clients: z.array(zGtmServerClient).optional(),
@@ -65,6 +101,7 @@ export type WorkspaceDesiredStatePartial = z.infer<typeof zWorkspaceDesiredState
 export const zWorkspaceDesiredStateOverlay = z
   .object({
     workspaceName: z.string().trim().min(1).optional(),
+    policy: zWorkspacePolicy.optional(),
     builtInVariableTypes: z.array(z.string().trim().min(1)).optional(),
     folders: z.array(zGtmFolder).optional(),
     clients: z.array(zGtmServerClient).optional(),

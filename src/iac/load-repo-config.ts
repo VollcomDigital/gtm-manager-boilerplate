@@ -86,6 +86,39 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
     );
   }
 
+  // policy.protectedNames: union/merge if provided
+  if (isRecord(overlay.policy)) {
+    const basePolicy = isRecord(base.policy) ? base.policy : {};
+    const overlayPolicy = overlay.policy;
+
+    const baseProtected = isRecord(basePolicy.protectedNames) ? basePolicy.protectedNames : {};
+    const overlayProtected = isRecord(overlayPolicy.protectedNames) ? overlayPolicy.protectedNames : {};
+
+    const keys = [
+      "builtInVariableTypes",
+      "folders",
+      "clients",
+      "transformations",
+      "tags",
+      "triggers",
+      "variables",
+      "templates",
+      "zones"
+    ] as const;
+
+    const mergedProtected: Record<string, unknown> = {};
+    for (const k of keys) {
+      const b = Array.isArray(baseProtected[k]) ? (baseProtected[k] as unknown[]) : [];
+      const o = Array.isArray(overlayProtected[k]) ? (overlayProtected[k] as unknown[]) : [];
+      mergedProtected[k] = mergeStringSet(
+        b.filter((v): v is string => typeof v === "string"),
+        o.filter((v): v is string => typeof v === "string")
+      );
+    }
+
+    out.policy = { protectedNames: mergedProtected };
+  }
+
   // Lists: merge by name if provided
   for (const listKey of ["folders", "clients", "transformations", "tags", "triggers", "variables", "templates", "zones"] as const) {
     const oList = overlay[listKey];

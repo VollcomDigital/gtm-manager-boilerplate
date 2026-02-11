@@ -117,6 +117,22 @@ function mergeStringSet(base: string[], overlay: string[]): string[] {
   return [...out.values()].sort((a, b) => a.localeCompare(b));
 }
 
+function makeEmptyPolicy(): WorkspaceDesiredState["policy"] {
+  return {
+    protectedNames: {
+      builtInVariableTypes: [],
+      folders: [],
+      clients: [],
+      transformations: [],
+      tags: [],
+      triggers: [],
+      variables: [],
+      templates: [],
+      zones: []
+    }
+  };
+}
+
 function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): WorkspaceDesiredState {
   const [first, ...rest] = parts;
   if (!first) {
@@ -125,6 +141,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
 
   let out: WorkspaceDesiredState = {
     workspaceName: first.workspaceName,
+    policy: first.policy ?? makeEmptyPolicy(),
     builtInVariableTypes: first.builtInVariableTypes ?? [],
     folders: first.folders ?? [],
     clients: first.clients ?? [],
@@ -139,6 +156,19 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
   for (const p of rest) {
     if (p.workspaceName !== out.workspaceName) {
       throw new Error(`workspaceName mismatch across overlays: "${out.workspaceName}" vs "${p.workspaceName}"`);
+    }
+    if (p.policy) {
+      const b = out.policy.protectedNames;
+      const o = p.policy.protectedNames;
+      b.builtInVariableTypes = mergeStringSet(b.builtInVariableTypes, o.builtInVariableTypes);
+      b.folders = mergeStringSet(b.folders, o.folders);
+      b.clients = mergeStringSet(b.clients, o.clients);
+      b.transformations = mergeStringSet(b.transformations, o.transformations);
+      b.tags = mergeStringSet(b.tags, o.tags);
+      b.triggers = mergeStringSet(b.triggers, o.triggers);
+      b.variables = mergeStringSet(b.variables, o.variables);
+      b.templates = mergeStringSet(b.templates, o.templates);
+      b.zones = mergeStringSet(b.zones, o.zones);
     }
     if (p.builtInVariableTypes) out.builtInVariableTypes = mergeStringSet(out.builtInVariableTypes, p.builtInVariableTypes);
     if (p.folders) out.folders = mergeByName(out.folders, p.folders);
