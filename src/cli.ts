@@ -12,6 +12,7 @@ import { loadRepoConfig } from "./iac/load-repo-config";
 import { normalizeForDiff } from "./iac/normalize";
 import { fetchWorkspaceSnapshot } from "./iac/snapshot";
 import { syncWorkspace } from "./iac/sync";
+import type { GtmEnvironment } from "./types/gtm-schema";
 
 type FlagValue = string | boolean;
 
@@ -84,6 +85,11 @@ Commands:
   publish-version --version-path <accounts/.../containers/.../versions/...> [--json]
   live-version --account-id <id> --container-id <id|GTM-XXXX> [--json]
   get-version --version-path <accounts/.../containers/.../versions/...> [--json]
+  list-environments --account-id <id> --container-id <id|GTM-XXXX> [--json]
+  get-environment --environment-path <accounts/.../containers/.../environments/...> [--json]
+  create-environment --account-id <id> --container-id <id|GTM-XXXX> --name <name> [--type USER] [--url <url>] [--enable-debug true|false] [--description <text>] [--json]
+  update-environment --environment-path <accounts/.../containers/.../environments/...> [--name <name>] [--url <url>] [--enable-debug true|false] [--description <text>] [--container-version-id <id>] [--workspace-id <id>] [--json]
+  delete-environment --environment-path <accounts/.../containers/.../environments/...> --confirm
   delete-workspace --workspace-path <accounts/.../containers/.../workspaces/...> --confirm
   reset-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --confirm [--json]
   export-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--out <file>] [--json]
@@ -102,6 +108,11 @@ Examples:
   npm run cli -- publish-version --version-path accounts/123/containers/456/versions/7 --json
   npm run cli -- live-version --account-id 123 --container-id 456 --json
   npm run cli -- get-version --version-path accounts/123/containers/456/versions/7 --json
+  npm run cli -- list-environments --account-id 123 --container-id 456 --json
+  npm run cli -- create-environment --account-id 123 --container-id 456 --name "Staging" --type USER --url "https://example.com" --enable-debug true --json
+  npm run cli -- get-environment --environment-path accounts/123/containers/456/environments/7 --json
+  npm run cli -- update-environment --environment-path accounts/123/containers/456/environments/7 --enable-debug false --json
+  npm run cli -- delete-environment --environment-path accounts/123/containers/456/environments/7 --confirm
   npm run cli -- delete-workspace --workspace-path accounts/123/containers/456/workspaces/999 --confirm
   npm run cli -- reset-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --confirm --json
   npm run cli -- export-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --out ./workspace.snapshot.json
@@ -123,6 +134,17 @@ Sync flags:
 function getStringFlag(flags: Record<string, FlagValue>, key: string): string | undefined {
   const v = flags[key];
   return typeof v === "string" && v.length ? v : undefined;
+}
+
+function getBooleanFlag(flags: Record<string, FlagValue>, key: string): boolean | undefined {
+  const v = flags[key];
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true" || s === "1" || s === "yes") return true;
+    if (s === "false" || s === "0" || s === "no") return false;
+  }
+  return undefined;
 }
 
 function parseCsv(value: string | undefined): string[] {
@@ -366,6 +388,87 @@ async function getVersion(gtm: GtmClient, versionPath: string, asJson: boolean):
     return;
   }
   console.log(`versionId=${version.containerVersionId ?? "?"}\tname=${version.name ?? "?"}\tpath=${version.path ?? "?"}`);
+}
+
+async function listEnvironments(gtm: GtmClient, locator: AccountContainerLocator, asJson: boolean): Promise<void> {
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+  const envs = await gtm.listEnvironments(containerPath);
+
+  if (asJson) {
+    console.log(JSON.stringify(envs, null, 2));
+    return;
+  }
+
+  for (const e of envs) {
+    console.log(`${e.name ?? "?"}\tenvironmentId=${e.environmentId ?? "?"}\ttype=${e.type ?? "?"}\turl=${e.url ?? "?"}`);
+  }
+}
+
+async function getEnvironment(gtm: GtmClient, environmentPath: string, asJson: boolean): Promise<void> {
+  const env = await gtm.getEnvironment(environmentPath);
+  if (asJson) {
+    console.log(JSON.stringify(env, null, 2));
+    return;
+  }
+  console.log(`environmentId=${env.environmentId ?? "?"}\tname=${env.name ?? "?"}\ttype=${env.type ?? "?"}`);
+}
+
+async function createEnvironment(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  env: GtmEnvironment,
+  asJson: boolean,
+  dryRun: boolean
+): Promise<void> {
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+
+  if (dryRun) {
+    console.log(JSON.stringify({ dryRun: true, action: "createEnvironment", containerPath, environment: env }, null, 2));
+    return;
+  }
+
+  const created = await gtm.createEnvironment(containerPath, env);
+  if (asJson) {
+    console.log(JSON.stringify(created, null, 2));
+    return;
+  }
+  console.log(`created environmentId=${created.environmentId ?? "?"}\tname=${created.name ?? "?"}\tpath=${created.path ?? "?"}`);
+}
+
+async function updateEnvironment(
+  gtm: GtmClient,
+  environmentPath: string,
+  patch: GtmEnvironment,
+  asJson: boolean,
+  dryRun: boolean
+): Promise<void> {
+  if (dryRun) {
+    console.log(JSON.stringify({ dryRun: true, action: "updateEnvironment", environmentPath, patch }, null, 2));
+    return;
+  }
+
+  // Merge with current to avoid accidental field loss if the endpoint behaves like PUT.
+  const current = await gtm.getEnvironment(environmentPath);
+  const merged = { ...current, ...patch };
+  const fingerprint = current.fingerprint ?? undefined;
+  const updated = await gtm.updateEnvironment(environmentPath, merged, fingerprint ? { fingerprint } : {});
+
+  if (asJson) {
+    console.log(JSON.stringify(updated, null, 2));
+    return;
+  }
+  console.log(`updated environmentId=${updated.environmentId ?? "?"}\tname=${updated.name ?? "?"}\tpath=${updated.path ?? "?"}`);
+}
+
+async function deleteEnvironment(gtm: GtmClient, environmentPath: string, dryRun: boolean): Promise<void> {
+  if (dryRun) {
+    console.log(JSON.stringify({ dryRun: true, action: "deleteEnvironment", environmentPath }));
+    return;
+  }
+  await gtm.deleteEnvironment(environmentPath);
+  console.log(`deleted environment path=${environmentPath}`);
 }
 
 async function deleteWorkspace(gtm: GtmClient, workspacePath: string, dryRun: boolean): Promise<void> {
@@ -939,6 +1042,133 @@ async function main(): Promise<void> {
       });
 
       await getVersion(gtm, args.versionPath, asJson);
+      return;
+    }
+    case "list-environments": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id")
+      });
+
+      await listEnvironments(
+        gtm,
+        { accountId: args.accountId, containerId: args.containerId },
+        asJson
+      );
+      return;
+    }
+    case "get-environment": {
+      const schema = z
+        .object({
+          environmentPath: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        environmentPath: getStringFlag(parsed.flags, "environment-path")
+      });
+
+      await getEnvironment(gtm, args.environmentPath, asJson);
+      return;
+    }
+    case "create-environment": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1),
+          name: z.string().min(1),
+          type: z.string().min(1).optional(),
+          url: z.string().min(1).optional(),
+          description: z.string().min(1).optional()
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id"),
+        name: getStringFlag(parsed.flags, "name"),
+        type: getStringFlag(parsed.flags, "type"),
+        url: getStringFlag(parsed.flags, "url"),
+        description: getStringFlag(parsed.flags, "description")
+      });
+
+      const enableDebug = getBooleanFlag(parsed.flags, "enable-debug");
+
+      const env: GtmEnvironment = {
+        name: args.name,
+        type: args.type ?? "USER",
+        url: args.url,
+        description: args.description,
+        ...(enableDebug !== undefined ? { enableDebug } : {})
+      };
+
+      await createEnvironment(
+        gtm,
+        { accountId: args.accountId, containerId: args.containerId },
+        env,
+        asJson,
+        dryRun
+      );
+      return;
+    }
+    case "update-environment": {
+      const schema = z
+        .object({
+          environmentPath: z.string().min(1),
+          name: z.string().min(1).optional(),
+          type: z.string().min(1).optional(),
+          url: z.string().min(1).optional(),
+          description: z.string().min(1).optional(),
+          containerVersionId: z.string().min(1).optional(),
+          workspaceId: z.string().min(1).optional()
+        })
+        .strict();
+
+      const args = schema.parse({
+        environmentPath: getStringFlag(parsed.flags, "environment-path"),
+        name: getStringFlag(parsed.flags, "name"),
+        type: getStringFlag(parsed.flags, "type"),
+        url: getStringFlag(parsed.flags, "url"),
+        description: getStringFlag(parsed.flags, "description"),
+        containerVersionId: getStringFlag(parsed.flags, "container-version-id"),
+        workspaceId: getStringFlag(parsed.flags, "workspace-id")
+      });
+
+      const enableDebug = getBooleanFlag(parsed.flags, "enable-debug");
+      const patch: GtmEnvironment = {
+        ...(args.name ? { name: args.name } : {}),
+        ...(args.type ? { type: args.type } : {}),
+        ...(args.url ? { url: args.url } : {}),
+        ...(args.description ? { description: args.description } : {}),
+        ...(args.containerVersionId ? { containerVersionId: args.containerVersionId } : {}),
+        ...(args.workspaceId ? { workspaceId: args.workspaceId } : {}),
+        ...(enableDebug !== undefined ? { enableDebug } : {})
+      };
+
+      await updateEnvironment(gtm, args.environmentPath, patch, asJson, dryRun);
+      return;
+    }
+    case "delete-environment": {
+      const schema = z
+        .object({
+          environmentPath: z.string().min(1),
+          confirm: z.literal(true)
+        })
+        .strict();
+
+      const args = schema.parse({
+        environmentPath: getStringFlag(parsed.flags, "environment-path"),
+        confirm: parsed.flags.confirm === true || parsed.flags.yes === true
+      });
+
+      await deleteEnvironment(gtm, args.environmentPath, dryRun);
       return;
     }
     case "delete-workspace": {

@@ -2,12 +2,14 @@ import { google, type tagmanager_v2 } from "googleapis";
 import type { GoogleAuth } from "google-auth-library";
 import {
   zGtmCustomTemplate,
+  zGtmEnvironment,
   zGtmFolder,
   zGtmTag,
   zGtmTrigger,
   zGtmVariable,
   zGtmZone,
   type GtmCustomTemplate,
+  type GtmEnvironment,
   type GtmFolder,
   type GtmTag,
   type GtmTrigger,
@@ -227,6 +229,71 @@ export class GtmClient {
     const parent = this.toAccountPath(accountId);
     const data = await this.request("GTM accounts.containers.list", () => this.api.accounts.containers.list({ parent }));
     return data.container ?? [];
+  }
+
+  // ----------------------------
+  // Environments (container-level)
+  // ----------------------------
+  async listEnvironments(containerPath: string): Promise<tagmanager_v2.Schema$Environment[]> {
+    return await this.listAllPages("GTM environments.list", async (pageToken) => {
+      const data = await this.request("GTM environments.list", () =>
+        this.api.accounts.containers.environments.list(
+          pageToken === undefined ? { parent: containerPath } : { parent: containerPath, pageToken }
+        )
+      );
+      return { items: data.environment ?? [], nextPageToken: data.nextPageToken };
+    });
+  }
+
+  async createEnvironment(containerPath: string, environment: GtmEnvironment): Promise<tagmanager_v2.Schema$Environment> {
+    const payload = this.stripIacMetadataDeep(zGtmEnvironment.parse(environment));
+    return await this.requestWithRetry(
+      "GTM environments.create",
+      () =>
+        this.api.accounts.containers.environments.create({
+          parent: containerPath,
+          requestBody: payload as unknown as tagmanager_v2.Schema$Environment
+        }),
+      "write"
+    );
+  }
+
+  async getEnvironment(environmentPath: string): Promise<tagmanager_v2.Schema$Environment> {
+    return await this.request("GTM environments.get", () =>
+      this.api.accounts.containers.environments.get({ path: environmentPath })
+    );
+  }
+
+  async updateEnvironment(
+    environmentPath: string,
+    environment: GtmEnvironment,
+    options: { fingerprint?: string } = {}
+  ): Promise<tagmanager_v2.Schema$Environment> {
+    const payload = this.stripIacMetadataDeep(zGtmEnvironment.parse(environment));
+    const params: { path: string; requestBody: tagmanager_v2.Schema$Environment; fingerprint?: string } = {
+      path: environmentPath,
+      requestBody: payload as unknown as tagmanager_v2.Schema$Environment
+    };
+    if (options.fingerprint) params.fingerprint = options.fingerprint;
+
+    return await this.requestWithRetry(
+      "GTM environments.update",
+      () => this.api.accounts.containers.environments.update(params),
+      "write"
+    );
+  }
+
+  async deleteEnvironment(environmentPath: string): Promise<void> {
+    await this.requestWithRetry(
+      "GTM environments.delete",
+      () => this.api.accounts.containers.environments.delete({ path: environmentPath }),
+      "write"
+    );
+  }
+
+  async findEnvironmentByName(containerPath: string, environmentName: string): Promise<tagmanager_v2.Schema$Environment | undefined> {
+    const envs = await this.listEnvironments(containerPath);
+    return envs.find((e) => (e.name ?? "").toLowerCase() === environmentName.toLowerCase());
   }
 
   async resolveAccountAndContainer(locator: AccountContainerLocator): Promise<ResolvedAccountContainer> {

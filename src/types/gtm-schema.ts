@@ -214,3 +214,34 @@ export const zGtmFolder = z
   })
   .passthrough();
 
+/**
+ * Minimal GTM API v2 Environment representation (subset).
+ *
+ * Environments are container-level resources (not workspace-level).
+ * Reference: https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/environments
+ */
+export interface GtmEnvironment {
+  environmentId?: string;
+  name?: string;
+  type?: string;
+  description?: string;
+  url?: string;
+  enableDebug?: boolean;
+  containerVersionId?: string;
+  workspaceId?: string;
+  [key: string]: unknown;
+}
+
+export const zGtmEnvironment = z
+  .object({
+    environmentId: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    type: z.string().min(1).optional(),
+    description: z.string().optional(),
+    url: z.string().optional(),
+    enableDebug: z.boolean().optional(),
+    containerVersionId: z.string().min(1).optional(),
+    workspaceId: z.string().min(1).optional()
+  })
+  .passthrough();
+
