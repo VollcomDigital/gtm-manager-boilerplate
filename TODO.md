@@ -62,7 +62,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 - [x] Rollback strategy (re-publish previous version)
 
 ### Tests & safety checks
-- [ ] Unit tests for:
+- [x] Unit tests for:
   - [x] Diff logic primitives (later reused in Phase 3)
   - [x] Name-based resolution
   - [x] Zod schema validations
@@ -92,7 +92,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Additions
   - [x] Deletions
   - [x] Updates (field-level)
-- [ ] Diff output:
+- [x] Diff output:
   - [x] Human-readable (console)
   - [x] Machine-readable (JSON artifact)
 
@@ -102,7 +102,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Variables
   - [x] Triggers
   - [x] Tags (depends on triggers/variables)
-- [ ] Handle referential integrity:
+- [x] Handle referential integrity:
   - [x] Trigger IDs referenced by tags
   - [x] Variable references inside tag parameters
 - [x] Implement idempotent upserts by name + stable identifiers
@@ -123,10 +123,10 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Create container version from workspace
   - [x] Publish version
   - [x] Emit summary with version ID and timestamp
-- [ ] Secrets management:
+- [x] Secrets management:
   - [x] Service account key via GitHub OIDC (preferred) or encrypted secret
   - [x] Avoid storing JSON keys in repo
-- [ ] Release process:
+- [x] Release process:
   - [x] Version the IaC tool (semantic releases)
   - [x] Generate changelogs
 

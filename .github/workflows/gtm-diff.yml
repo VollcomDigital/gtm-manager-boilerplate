@@ -9,7 +9,19 @@ jobs:
 
     # This job is intentionally skipped unless secrets are configured.
     # See README for the recommended secret/env names.
-    if: ${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' }}
+    if: >-
+      ${{
+        secrets.GTM_ACCOUNT_ID != '' &&
+        secrets.GTM_CONTAINER_ID != '' &&
+        (
+          secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' ||
+          (secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '')
+        )
+      }}
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -24,16 +36,29 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Write service account key
+      - name: Authenticate to Google (OIDC)
+        id: gcp_auth
+        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Write service account key (fallback)
+        if: ${{ !(secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '') }}
         shell: bash
         run: |
           set -euo pipefail
           echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
+          echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 
       - name: GTM diff (workspace)
+        id: gtm_diff
+        continue-on-error: true
         env:
-          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
           GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
           GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
           GTM_WORKSPACE_NAME: ${{ vars.GTM_WORKSPACE_NAME }}
@@ -54,8 +79,13 @@ jobs:
             > gtm.diff.json
 
       - name: Upload diff artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gtm-diff
           path: gtm.diff.json
+
+      - name: Fail PR on drift
+        if: ${{ steps.gtm_diff.outcome == 'failure' }}
+        run: exit 1
 

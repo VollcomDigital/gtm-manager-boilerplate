@@ -49,10 +49,17 @@ jobs:
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' &&
-        secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' &&
         secrets.GTM_ACCOUNT_ID != '' &&
-        secrets.GTM_CONTAINER_ID != ''
+        secrets.GTM_CONTAINER_ID != '' &&
+        (
+          secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' ||
+          (secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '')
+        )
       }}
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -67,16 +74,27 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Write service account key
+      - name: Authenticate to Google (OIDC)
+        id: gcp_auth
+        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Write service account key (fallback)
+        if: ${{ !(secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '') }}
         shell: bash
         run: |
           set -euo pipefail
           echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
+          echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 
       - name: Sync workspace
         env:
-          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
           GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
           GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
           LOG_FORMAT: json
@@ -106,7 +124,6 @@ jobs:
       - name: Create container version (optional)
         if: ${{ inputs.publish == true && inputs.dry_run == false }}
         env:
-          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
           GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
           GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
           LOG_FORMAT: json
@@ -128,7 +145,6 @@ jobs:
       - name: Publish container version (optional)
         if: ${{ inputs.publish == true && inputs.dry_run == false }}
         env:
-          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
           LOG_FORMAT: json
         shell: bash
         run: |
@@ -198,12 +214,19 @@ jobs:
       ${{
         github.event_name == 'push' &&
         vars.GTM_SYNC_ON_PUSH == 'true' &&
-        secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' &&
         secrets.GTM_ACCOUNT_ID != '' &&
         secrets.GTM_CONTAINER_ID != '' &&
         vars.GTM_WORKSPACE_NAME != '' &&
-        vars.GTM_DESIRED_CONFIG_PATH != ''
+        vars.GTM_DESIRED_CONFIG_PATH != '' &&
+        (
+          secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' ||
+          (secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '')
+        )
       }}
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -218,16 +241,27 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Write service account key
+      - name: Authenticate to Google (OIDC)
+        id: gcp_auth
+        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Write service account key (fallback)
+        if: ${{ !(secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '') }}
         shell: bash
         run: |
           set -euo pipefail
           echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
+          echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 
       - name: Sync workspace (push)
         env:
-          GTM_CREDENTIALS_PATH: ${{ github.workspace }}/gtm-service-account.json
           GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
           GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
           GTM_WORKSPACE_NAME: ${{ vars.GTM_WORKSPACE_NAME }}

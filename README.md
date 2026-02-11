@@ -210,7 +210,8 @@ Notes:
 ### GitHub Actions: optional GTM diff on PRs
 This repo ships a `gtm-diff` workflow that is **skipped by default** unless you configure secrets/vars:
 - Secrets:
-  - `GTM_SERVICE_ACCOUNT_JSON_B64` (base64-encoded service-account JSON)
+  - `GTM_SERVICE_ACCOUNT_JSON_B64` (base64-encoded service-account JSON; fallback option)
+  - OR (preferred) `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT_EMAIL` for GitHub OIDC
   - `GTM_ACCOUNT_ID`
   - `GTM_CONTAINER_ID`
 - Vars:
@@ -230,6 +231,12 @@ Required secrets:
 - `GTM_SERVICE_ACCOUNT_JSON_B64`
 - `GTM_ACCOUNT_ID`
 - `GTM_CONTAINER_ID`
+
+OIDC alternative (preferred):
+- Secrets:
+  - `GCP_WORKLOAD_IDENTITY_PROVIDER`
+  - `GCP_SERVICE_ACCOUNT_EMAIL`
+- If these are set, the workflows will authenticate to GCP without storing a JSON key.
 
 Required vars for push-based sync:
 - `GTM_WORKSPACE_NAME`
