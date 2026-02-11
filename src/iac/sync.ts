@@ -118,12 +118,14 @@ export interface SyncWorkspaceResult {
   variables: EntitySyncSummary;
   triggers: EntitySyncSummary;
   tags: EntitySyncSummary;
+  warnings: string[];
 }
 
 export interface SyncWorkspaceOptions {
   dryRun: boolean;
   deleteMissing: boolean;
   updateExisting: boolean;
+  validateVariableRefs: boolean;
 }
 
 function emptySummary(): EntitySyncSummary {
@@ -154,7 +156,8 @@ export async function syncWorkspace(
     templates: emptySummary(),
     variables: emptySummary(),
     triggers: emptySummary(),
-    tags: emptySummary()
+    tags: emptySummary(),
+    warnings: []
   };
 
   // ----------------------------
@@ -242,9 +245,14 @@ export async function syncWorkspace(
   // Variables
   // ----------------------------
   const currentVariablesByName = new Map<string, tagmanager_v2.Schema$Variable>();
+  const availableVariableNames = new Set<string>();
   for (const v of snapshot.variables) {
     const name = normalizeEntityName(v);
-    if (name) currentVariablesByName.set(lower(name), v);
+    if (name) {
+      const k = lower(name);
+      currentVariablesByName.set(k, v);
+      availableVariableNames.add(k);
+    }
   }
 
   for (const dv of desired.variables) {
@@ -252,6 +260,7 @@ export async function syncWorkspace(
     const existing = currentVariablesByName.get(key);
     if (!existing) {
       res.variables.created.push(dv.name);
+      availableVariableNames.add(key);
       if (!options.dryRun) {
         await gtm.createVariable(workspacePath, dv as unknown as GtmVariable);
       }
@@ -372,6 +381,19 @@ export async function syncWorkspace(
     if (name) currentTagsByName.set(lower(name), t);
   }
 
+  if (options.validateVariableRefs) {
+    const refs = collectVariableReferencesFromTags(desired.tags);
+    for (const refName of refs) {
+      const k = lower(refName);
+      if (!availableVariableNames.has(k)) {
+        // NOTE: This is a best-effort check. Built-in variables are not returned
+        // by `workspaces.variables.list`, so some warnings may be benign.
+        res.warnings.push(`Tag config references variable "{{${refName}}}" not found in workspace variables list.`);
+      }
+    }
+    res.warnings.sort();
+  }
+
   for (const rawDesiredTag of desired.tags) {
     const desiredTagResolved = tagWithResolvedTriggers(rawDesiredTag as unknown, triggerNameToId);
     const name = isRecord(desiredTagResolved) ? desiredTagResolved.name : undefined;
@@ -439,5 +461,33 @@ export async function syncWorkspace(
   }
 
   return res;
+}
+
+function collectVariableReferencesFromTags(tags: unknown[]): Set<string> {
+  const out = new Set<string>();
+  for (const t of tags) {
+    collectVariableReferencesDeep(t, out);
+  }
+  return out;
+}
+
+function collectVariableReferencesDeep(value: unknown, out: Set<string>): void {
+  if (typeof value === "string") {
+    const re = /\{\{\s*([^}]+?)\s*\}\}/g;
+    let m: RegExpExecArray | null;
+    // eslint-disable-next-line no-cond-assign
+    while ((m = re.exec(value))) {
+      const name = m[1]?.trim();
+      if (name) out.add(name);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) collectVariableReferencesDeep(v, out);
+    return;
+  }
+  if (isRecord(value)) {
+    for (const v of Object.values(value)) collectVariableReferencesDeep(v, out);
+  }
 }
 

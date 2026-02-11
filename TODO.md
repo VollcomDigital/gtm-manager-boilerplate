@@ -104,7 +104,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Tags (depends on triggers/variables)
 - [ ] Handle referential integrity:
   - [x] Trigger IDs referenced by tags
-  - [ ] Variable references inside tag parameters
+  - [x] Variable references inside tag parameters
 - [x] Implement idempotent upserts by name + stable identifiers
 - [x] Add drift detection (current != desired) and fail CI when drift exists (optional policy)
 

@@ -109,6 +109,9 @@ Examples:
 Diff flags:
   --fail-on-drift   Exit non-zero when drift detected
   --ignore-deletes  Ignore deletions when evaluating drift
+
+Sync flags:
+  --validate-variable-refs  Best-effort check for {{Variable}} references
 `);
 }
 
@@ -461,7 +464,7 @@ async function syncWorkspaceFromConfig(
   locator: AccountContainerLocator,
   workspaceName: string,
   configPath: string,
-  opts: { deleteMissing: boolean; dryRun: boolean; updateExisting: boolean },
+  opts: { deleteMissing: boolean; dryRun: boolean; updateExisting: boolean; validateVariableRefs: boolean },
   asJson: boolean
 ): Promise<void> {
   const desired = await loadWorkspaceDesiredState(configPath);
@@ -470,7 +473,8 @@ async function syncWorkspaceFromConfig(
   const result = await syncWorkspace(gtm, workspacePath, desired, {
     dryRun: opts.dryRun,
     deleteMissing: opts.deleteMissing,
-    updateExisting: opts.updateExisting
+    updateExisting: opts.updateExisting,
+    validateVariableRefs: opts.validateVariableRefs
   });
 
   const json = JSON.stringify(result, null, 2);
@@ -517,6 +521,8 @@ async function main(): Promise<void> {
   const deleteMissing = parsed.flags["delete-missing"] === true || parsed.flags.deleteMissing === true;
   const failOnDrift = parsed.flags["fail-on-drift"] === true || parsed.flags.failOnDrift === true;
   const ignoreDeletes = parsed.flags["ignore-deletes"] === true || parsed.flags.ignoreDeletes === true;
+  const validateVariableRefs =
+    parsed.flags["validate-variable-refs"] === true || parsed.flags.validateVariableRefs === true;
 
   switch (parsed.command) {
     case "list-accounts": {
@@ -810,7 +816,8 @@ async function main(): Promise<void> {
         {
           deleteMissing,
           dryRun,
-          updateExisting: true
+          updateExisting: true,
+          validateVariableRefs
         },
         asJson
       );
