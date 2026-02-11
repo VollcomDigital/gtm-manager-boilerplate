@@ -87,7 +87,7 @@ Commands:
   ensure-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--json]
   list-workspaces --account-id <id> --container-id <id|GTM-XXXX> [--json]
   create-version --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--version-name <name>] [--notes <text>] [--json]
-  publish-version --version-path <accounts/.../containers/.../versions/...> [--json]
+  publish-version --version-path <accounts/.../containers/.../versions/...> --confirm [--json]
   live-version --account-id <id> --container-id <id|GTM-XXXX> [--json]
   get-version --version-path <accounts/.../containers/.../versions/...> [--json]
   list-environments --account-id <id> --container-id <id|GTM-XXXX> [--json]
@@ -113,7 +113,7 @@ Examples:
   npm run cli -- ensure-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --json
   npm run cli -- list-workspaces --account-id 1234567890 --container-id 51955729 --json
   npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --version-name "IaC Release" --notes "Automated publish" --json
-  npm run cli -- publish-version --version-path accounts/123/containers/456/versions/7 --json
+  npm run cli -- publish-version --version-path accounts/123/containers/456/versions/7 --confirm --json
   npm run cli -- live-version --account-id 123 --container-id 456 --json
   npm run cli -- get-version --version-path accounts/123/containers/456/versions/7 --json
   npm run cli -- list-environments --account-id 123 --container-id 456 --json
@@ -1217,12 +1217,14 @@ async function main(): Promise<void> {
     case "publish-version": {
       const schema = z
         .object({
-          versionPath: z.string().min(1)
+          versionPath: z.string().min(1),
+          confirm: z.literal(true)
         })
         .strict();
 
       const args = schema.parse({
-        versionPath: getStringFlag(parsed.flags, "version-path")
+        versionPath: getStringFlag(parsed.flags, "version-path"),
+        confirm: dryRun ? true : confirmFlag
       });
 
       await publishVersion(gtm, args.versionPath, asJson, dryRun);
