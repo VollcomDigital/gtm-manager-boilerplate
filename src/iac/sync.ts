@@ -1,5 +1,6 @@
 import type { tagmanager_v2 } from "googleapis";
 import type { GtmClient } from "../lib/gtm-client";
+import type { GtmCustomTemplate, GtmTag, GtmTrigger, GtmVariable } from "../types/gtm-schema";
 import type { WorkspaceDesiredState } from "./workspace-config";
 import { matchesDesiredSubset } from "./diff";
 import { normalizeForDiff, stripDynamicFieldsDeep } from "./normalize";
@@ -170,7 +171,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.templates.created.push(dt.name);
       if (!options.dryRun) {
-        await gtm.createTemplate(workspacePath, dt);
+        await gtm.createTemplate(workspacePath, dt as unknown as GtmCustomTemplate);
       }
       continue;
     }
@@ -191,13 +192,18 @@ export async function syncWorkspace(
         throw new Error(`Cannot update template "${dt.name}" (missing path/templateId).`);
       }
       const merged = mergeDesiredIntoCurrent(existing, dt);
-      const body = stripDynamicFieldsDeep(merged) as unknown as Record<string, unknown>;
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmCustomTemplate;
       // Prefer path if present.
       const fingerprint = existing.fingerprint ?? undefined;
       if (existing.path) {
-        await gtm.updateTemplate(existing.path, body, fingerprint ? { fingerprint } : {});
+        await gtm.updateTemplate(existing.path, body as unknown as GtmCustomTemplate, fingerprint ? { fingerprint } : {});
       } else {
-        await gtm.updateTemplateById(workspacePath, existing.templateId!, body, fingerprint ? { fingerprint } : {});
+        await gtm.updateTemplateById(
+          workspacePath,
+          existing.templateId!,
+          body as unknown as GtmCustomTemplate,
+          fingerprint ? { fingerprint } : {}
+        );
       }
     }
   }
@@ -233,7 +239,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.variables.created.push(dv.name);
       if (!options.dryRun) {
-        await gtm.createVariable(workspacePath, dv);
+        await gtm.createVariable(workspacePath, dv as unknown as GtmVariable);
       }
       continue;
     }
@@ -252,9 +258,14 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.variableId) throw new Error(`Cannot update variable "${dv.name}" (missing variableId).`);
       const merged = mergeDesiredIntoCurrent(existing, dv);
-      const body = stripDynamicFieldsDeep(merged) as unknown as Record<string, unknown>;
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmVariable;
       const fingerprint = existing.fingerprint ?? undefined;
-      await gtm.updateVariableById(workspacePath, existing.variableId, body, fingerprint ? { fingerprint } : {});
+      await gtm.updateVariableById(
+        workspacePath,
+        existing.variableId,
+        body as unknown as GtmVariable,
+        fingerprint ? { fingerprint } : {}
+      );
     }
   }
 
@@ -290,7 +301,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.triggers.created.push(dt.name);
       if (!options.dryRun) {
-        const created = await gtm.createTrigger(workspacePath, dt);
+        const created = await gtm.createTrigger(workspacePath, dt as unknown as GtmTrigger);
         if (created.triggerId) {
           triggerNameToId.set(key, created.triggerId);
         }
@@ -312,9 +323,14 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.triggerId) throw new Error(`Cannot update trigger "${dt.name}" (missing triggerId).`);
       const merged = mergeDesiredIntoCurrent(existing, dt);
-      const body = stripDynamicFieldsDeep(merged) as unknown as Record<string, unknown>;
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmTrigger;
       const fingerprint = existing.fingerprint ?? undefined;
-      const updated = await gtm.updateTriggerById(workspacePath, existing.triggerId, body, fingerprint ? { fingerprint } : {});
+      const updated = await gtm.updateTriggerById(
+        workspacePath,
+        existing.triggerId,
+        body as unknown as GtmTrigger,
+        fingerprint ? { fingerprint } : {}
+      );
       if (updated.triggerId) {
         triggerNameToId.set(key, updated.triggerId);
       }
@@ -360,7 +376,10 @@ export async function syncWorkspace(
 
       res.tags.created.push(name);
       if (!options.dryRun) {
-        await gtm.createTag(workspacePath, stripDynamicFieldsDeep(desiredTagResolved) as unknown as Record<string, unknown>);
+        await gtm.createTag(
+          workspacePath,
+          stripDynamicFieldsDeep(desiredTagResolved) as unknown as GtmTag
+        );
       }
       continue;
     }
@@ -379,9 +398,9 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.tagId) throw new Error(`Cannot update tag "${name}" (missing tagId).`);
       const merged = mergeDesiredIntoCurrent(existing, desiredTagResolved);
-      const body = stripDynamicFieldsDeep(merged) as unknown as Record<string, unknown>;
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmTag;
       const fingerprint = existing.fingerprint ?? undefined;
-      await gtm.updateTagById(workspacePath, existing.tagId, body, fingerprint ? { fingerprint } : {});
+      await gtm.updateTagById(workspacePath, existing.tagId, body as unknown as GtmTag, fingerprint ? { fingerprint } : {});
     }
   }
 
