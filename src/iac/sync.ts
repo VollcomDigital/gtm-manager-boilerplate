@@ -1,6 +1,6 @@
 import type { tagmanager_v2 } from "googleapis";
 import type { GtmClient } from "../lib/gtm-client";
-import type { GtmCustomTemplate, GtmTag, GtmTrigger, GtmVariable } from "../types/gtm-schema";
+import type { GtmCustomTemplate, GtmTag, GtmTrigger, GtmVariable, GtmZone } from "../types/gtm-schema";
 import type { WorkspaceDesiredState } from "./workspace-config";
 import { matchesDesiredSubset } from "./diff";
 import { sha256HexFromString } from "./hash";
@@ -98,6 +98,44 @@ function tagWithResolvedTriggers(
   return out;
 }
 
+function zoneWithResolvedCustomEvalTriggers(
+  desiredZone: unknown,
+  triggerNameToId: Map<string, string>
+): unknown {
+  if (!isRecord(desiredZone)) return desiredZone;
+  const out: Record<string, unknown> = { ...desiredZone };
+
+  const boundary = out.boundary;
+  if (!isRecord(boundary)) {
+    return out;
+  }
+
+  const customIds = boundary.customEvaluationTriggerId;
+  const customNames = boundary.customEvaluationTriggerNames;
+  if (customIds !== undefined && customNames !== undefined) {
+    throw new Error(`Zone "${String(out.name ?? "?")}" cannot specify both boundary.customEvaluationTriggerId and boundary.customEvaluationTriggerNames.`);
+  }
+
+  if (Array.isArray(customNames)) {
+    const resolved: string[] = [];
+    for (const n of customNames) {
+      if (typeof n !== "string" || !n.trim()) continue;
+      const id = triggerNameToId.get(lower(n));
+      if (!id) {
+        throw new Error(`Zone "${String(out.name ?? "?")}" references missing custom evaluation trigger by name: "${n}"`);
+      }
+      resolved.push(id);
+    }
+    out.boundary = {
+      ...boundary,
+      customEvaluationTriggerId: resolved
+    };
+    delete (out.boundary as Record<string, unknown>).customEvaluationTriggerNames;
+  }
+
+  return out;
+}
+
 function normalizeEntityName<T extends { name?: string | null }>(entity: T): string | undefined {
   const name = entity.name ?? undefined;
   if (!name) return undefined;
@@ -117,6 +155,7 @@ export interface SyncWorkspaceResult {
   templates: EntitySyncSummary;
   variables: EntitySyncSummary;
   triggers: EntitySyncSummary;
+  zones: EntitySyncSummary;
   tags: EntitySyncSummary;
   warnings: string[];
 }
@@ -147,6 +186,7 @@ export async function syncWorkspace(
   ensureUniqueNames(desired.templates, "template");
   ensureUniqueNames(desired.variables, "variable");
   ensureUniqueNames(desired.triggers, "trigger");
+  ensureUniqueNames(desired.zones, "zone");
   ensureUniqueNames(desired.tags, "tag");
 
   const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
@@ -156,6 +196,7 @@ export async function syncWorkspace(
     templates: emptySummary(),
     variables: emptySummary(),
     triggers: emptySummary(),
+    zones: emptySummary(),
     tags: emptySummary(),
     warnings: []
   };
@@ -373,6 +414,65 @@ export async function syncWorkspace(
   }
 
   // ----------------------------
+  // Zones (depends on triggers for customEvaluationTriggerId)
+  // ----------------------------
+  const currentZonesByName = new Map<string, tagmanager_v2.Schema$Zone>();
+  for (const z of snapshot.zones) {
+    const name = normalizeEntityName(z);
+    if (name) currentZonesByName.set(lower(name), z);
+  }
+
+  for (const rawDesiredZone of desired.zones) {
+    const desiredZoneResolved = zoneWithResolvedCustomEvalTriggers(rawDesiredZone as unknown, triggerNameToId);
+    const name = isRecord(desiredZoneResolved) ? desiredZoneResolved.name : undefined;
+    if (typeof name !== "string" || !name.trim()) {
+      throw new Error("Desired zone missing a valid name.");
+    }
+
+    const key = lower(name);
+    const existing = currentZonesByName.get(key);
+
+    if (!existing) {
+      res.zones.created.push(name);
+      if (!options.dryRun) {
+        await gtm.createZone(workspacePath, stripDynamicFieldsDeep(desiredZoneResolved) as unknown as GtmZone);
+      }
+      continue;
+    }
+
+    if (!options.updateExisting) {
+      res.zones.skipped.push(name);
+      continue;
+    }
+
+    if (!shouldUpdate(zoneWithResolvedCustomEvalTriggers(existing as unknown, triggerNameToId), desiredZoneResolved)) {
+      res.zones.skipped.push(name);
+      continue;
+    }
+
+    res.zones.updated.push(name);
+    if (!options.dryRun) {
+      if (!existing.zoneId) throw new Error(`Cannot update zone "${name}" (missing zoneId).`);
+      const merged = mergeDesiredIntoCurrent(existing, desiredZoneResolved);
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmZone;
+      const fingerprint = existing.fingerprint ?? undefined;
+      await gtm.updateZoneById(workspacePath, existing.zoneId, body as unknown as GtmZone, fingerprint ? { fingerprint } : {});
+    }
+  }
+
+  if (options.deleteMissing) {
+    const desiredSet = new Set(desired.zones.map((z) => lower(z.name)));
+    for (const [nameLowerKey, existing] of currentZonesByName.entries()) {
+      if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      res.zones.deleted.push(displayName);
+      if (!options.dryRun && existing.zoneId) {
+        await gtm.deleteZoneById(workspacePath, existing.zoneId);
+      }
+    }
+  }
+
+  // ----------------------------
   // Tags (depends on triggers)
   // ----------------------------
   const currentTagsByName = new Map<string, tagmanager_v2.Schema$Tag>();
@@ -382,13 +482,13 @@ export async function syncWorkspace(
   }
 
   if (options.validateVariableRefs) {
-    const refs = collectVariableReferencesFromTags(desired.tags);
+    const refs = collectVariableReferencesFromValues([...desired.tags, ...desired.zones]);
     for (const refName of refs) {
       const k = lower(refName);
       if (!availableVariableNames.has(k)) {
         // NOTE: This is a best-effort check. Built-in variables are not returned
         // by `workspaces.variables.list`, so some warnings may be benign.
-        res.warnings.push(`Tag config references variable "{{${refName}}}" not found in workspace variables list.`);
+        res.warnings.push(`Config references variable "{{${refName}}}" not found in workspace variables list.`);
       }
     }
     res.warnings.sort();
@@ -453,7 +553,7 @@ export async function syncWorkspace(
   }
 
   // Sort for stable output.
-  for (const summary of [res.templates, res.variables, res.triggers, res.tags]) {
+  for (const summary of [res.templates, res.variables, res.triggers, res.zones, res.tags]) {
     summary.created.sort();
     summary.updated.sort();
     summary.deleted.sort();
@@ -463,10 +563,10 @@ export async function syncWorkspace(
   return res;
 }
 
-function collectVariableReferencesFromTags(tags: unknown[]): Set<string> {
+function collectVariableReferencesFromValues(values: unknown[]): Set<string> {
   const out = new Set<string>();
-  for (const t of tags) {
-    collectVariableReferencesDeep(t, out);
+  for (const v of values) {
+    collectVariableReferencesDeep(v, out);
   }
   return out;
 }

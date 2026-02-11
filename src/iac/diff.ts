@@ -85,6 +85,7 @@ export interface WorkspaceDiff {
   triggers: EntityDiff;
   variables: EntityDiff;
   templates: EntityDiff;
+  zones: EntityDiff;
 }
 
 export interface WorkspaceSnapshot {
@@ -92,6 +93,7 @@ export interface WorkspaceSnapshot {
   triggers: unknown[];
   variables: unknown[];
   templates: unknown[];
+  zones: unknown[];
 }
 
 function diffByName(desired: Array<{ name: string }>, current: unknown[]): EntityDiff {
@@ -148,7 +150,8 @@ export function diffWorkspace(desired: WorkspaceDesiredState, current: Workspace
     tags: diffByName(desired.tags, current.tags),
     triggers: diffByName(desired.triggers, current.triggers),
     variables: diffByName(desired.variables, current.variables),
-    templates: diffByName(desired.templates, current.templates)
+    templates: diffByName(desired.templates, current.templates),
+    zones: diffByName(desired.zones, current.zones)
   };
 }
 

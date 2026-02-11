@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { zGtmCustomTemplate, zGtmTag, zGtmTrigger, zGtmVariable } from "../types/gtm-schema";
+import { zGtmCustomTemplate, zGtmTag, zGtmTrigger, zGtmVariable, zGtmZone } from "../types/gtm-schema";
 
 /**
  * Minimal desired-state schema for a single GTM Workspace.
@@ -13,7 +13,8 @@ export const zWorkspaceDesiredState = z
     tags: z.array(zGtmTag).default([]),
     triggers: z.array(zGtmTrigger).default([]),
     variables: z.array(zGtmVariable).default([]),
-    templates: z.array(zGtmCustomTemplate).default([])
+    templates: z.array(zGtmCustomTemplate).default([]),
+    zones: z.array(zGtmZone).default([])
   })
   .strict();
 
@@ -31,7 +32,8 @@ export const zWorkspaceDesiredStatePartial = z
     tags: z.array(zGtmTag).optional(),
     triggers: z.array(zGtmTrigger).optional(),
     variables: z.array(zGtmVariable).optional(),
-    templates: z.array(zGtmCustomTemplate).optional()
+    templates: z.array(zGtmCustomTemplate).optional(),
+    zones: z.array(zGtmZone).optional()
   })
   .strict();
 
@@ -49,7 +51,8 @@ export const zWorkspaceDesiredStateOverlay = z
     tags: z.array(zGtmTag).optional(),
     triggers: z.array(zGtmTrigger).optional(),
     variables: z.array(zGtmVariable).optional(),
-    templates: z.array(zGtmCustomTemplate).optional()
+    templates: z.array(zGtmCustomTemplate).optional(),
+    zones: z.array(zGtmZone).optional()
   })
   .strict();
 

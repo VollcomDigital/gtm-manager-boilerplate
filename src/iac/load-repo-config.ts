@@ -62,7 +62,7 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
   }
 
   // Lists: merge by name if provided
-  for (const listKey of ["tags", "triggers", "variables", "templates"] as const) {
+  for (const listKey of ["tags", "triggers", "variables", "templates", "zones"] as const) {
     const oList = overlay[listKey];
     if (!Array.isArray(oList)) continue;
 
@@ -140,7 +140,8 @@ function finalizeRepoConfig(partial: { defaults?: { workspaceName?: string }; co
         tags: (c.workspace as unknown as { tags?: unknown[] } | undefined)?.tags ?? [],
         triggers: (c.workspace as unknown as { triggers?: unknown[] } | undefined)?.triggers ?? [],
         variables: (c.workspace as unknown as { variables?: unknown[] } | undefined)?.variables ?? [],
-        templates: (c.workspace as unknown as { templates?: unknown[] } | undefined)?.templates ?? []
+        templates: (c.workspace as unknown as { templates?: unknown[] } | undefined)?.templates ?? [],
+        zones: (c.workspace as unknown as { zones?: unknown[] } | undefined)?.zones ?? []
       }
     };
 

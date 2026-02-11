@@ -178,6 +178,7 @@ jobs:
             md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
             md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
             md += `| Triggers | ${created(sync.triggers)} | ${updated(sync.triggers)} | ${deleted(sync.triggers)} | ${skipped(sync.triggers)} |\\n`;
+            md += `| Zones | ${created(sync.zones)} | ${updated(sync.zones)} | ${deleted(sync.zones)} | ${skipped(sync.zones)} |\\n`;
             md += `| Tags | ${created(sync.tags)} | ${updated(sync.tags)} | ${deleted(sync.tags)} | ${skipped(sync.tags)} |\\n`;
             md += "\\n";
           } else {
@@ -311,6 +312,7 @@ jobs:
           md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
           md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
           md += `| Triggers | ${created(sync.triggers)} | ${updated(sync.triggers)} | ${deleted(sync.triggers)} | ${skipped(sync.triggers)} |\\n`;
+          md += `| Zones | ${created(sync.zones)} | ${updated(sync.zones)} | ${deleted(sync.zones)} | ${skipped(sync.zones)} |\\n`;
           md += `| Tags | ${created(sync.tags)} | ${updated(sync.tags)} | ${deleted(sync.tags)} | ${skipped(sync.tags)} |\\n`;
           md += `\\nTimestamp: \`${new Date().toISOString()}\`\\n`;
           fs.appendFileSync(summaryPath, md);

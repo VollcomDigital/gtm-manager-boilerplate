@@ -459,7 +459,8 @@ async function exportWorkspaceSnapshot(
     tags: snapshot.tags.map((t) => normalizeForDiff(t)),
     triggers: snapshot.triggers.map((t) => normalizeForDiff(t)),
     variables: snapshot.variables.map((v) => normalizeForDiff(v)),
-    templates: snapshot.templates.map((t) => normalizeForDiff(t))
+    templates: snapshot.templates.map((t) => normalizeForDiff(t)),
+    zones: snapshot.zones.map((z) => normalizeForDiff(z))
   };
 
   const json = JSON.stringify(desiredLike, null, 2);
@@ -494,9 +495,10 @@ async function diffWorkspaceFromConfig(
     diff.triggers.delete = [];
     diff.variables.delete = [];
     diff.templates.delete = [];
+    diff.zones.delete = [];
   }
 
-  const hasDrift = [diff.tags, diff.triggers, diff.variables, diff.templates].some(
+  const hasDrift = [diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
     (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
   );
 
@@ -559,9 +561,10 @@ async function diffRepoFromConfig(
         diff.triggers.delete = [];
         diff.variables.delete = [];
         diff.templates.delete = [];
+        diff.zones.delete = [];
       }
 
-      const drift = [diff.tags, diff.triggers, diff.variables, diff.templates].some(
+      const drift = [diff.tags, diff.triggers, diff.variables, diff.templates, diff.zones].some(
         (d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0
       );
       if (drift) hadDrift = true;

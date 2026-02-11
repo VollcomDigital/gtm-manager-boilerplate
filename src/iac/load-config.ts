@@ -113,7 +113,8 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
     tags: first.tags ?? [],
     triggers: first.triggers ?? [],
     variables: first.variables ?? [],
-    templates: first.templates ?? []
+    templates: first.templates ?? [],
+    zones: first.zones ?? []
   };
 
   for (const p of rest) {
@@ -124,6 +125,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
     if (p.triggers) out.triggers = mergeByName(out.triggers, p.triggers);
     if (p.variables) out.variables = mergeByName(out.variables, p.variables);
     if (p.templates) out.templates = mergeByName(out.templates, p.templates);
+    if (p.zones) out.zones = mergeByName(out.zones, p.zones);
   }
 
   return out;

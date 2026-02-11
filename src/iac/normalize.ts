@@ -11,7 +11,8 @@ const DYNAMIC_KEYS = new Set<string>([
   "tagId",
   "triggerId",
   "variableId",
-  "templateId"
+  "templateId",
+  "zoneId"
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
