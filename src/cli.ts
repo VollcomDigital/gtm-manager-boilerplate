@@ -65,11 +65,17 @@ Commands:
   list-accounts [--json]
   list-containers --account-id <id> | --account-name <name> [--json]
   ensure-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--json]
+  list-workspaces --account-id <id> --container-id <id|GTM-XXXX> [--json]
+  create-version --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> [--version-name <name>] [--notes <text>] [--json]
+  publish-version --version-path <accounts/.../containers/.../versions/...> [--json]
 
 Examples:
   npm run cli -- list-accounts --json
   npm run cli -- list-containers --account-id 1234567890 --json
   npm run cli -- ensure-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --json
+  npm run cli -- list-workspaces --account-id 1234567890 --container-id 51955729 --json
+  npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --version-name "IaC Release" --notes "Automated publish" --json
+  npm run cli -- publish-version --version-path accounts/123/containers/456/versions/7 --json
 `);
 }
 
@@ -121,6 +127,64 @@ async function ensureWorkspace(
   }
 
   console.log(`workspaceId=${workspace.workspaceId ?? "?"}\tname=${workspace.name ?? "?"}`);
+}
+
+async function listWorkspaces(gtm: GtmClient, locator: AccountContainerLocator, asJson: boolean): Promise<void> {
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+  const workspaces = await gtm.listWorkspaces(containerPath);
+
+  if (asJson) {
+    console.log(JSON.stringify(workspaces, null, 2));
+    return;
+  }
+
+  for (const w of workspaces) {
+    console.log(`${w.name ?? "?"}\tworkspaceId=${w.workspaceId ?? "?"}`);
+  }
+}
+
+async function createVersionFromWorkspace(
+  gtm: GtmClient,
+  locator: AccountContainerLocator,
+  workspaceName: string,
+  options: { versionName?: string; notes?: string },
+  asJson: boolean
+): Promise<void> {
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(locator);
+  const workspace = await gtm.getOrCreateWorkspace({ accountId, containerId, workspaceName });
+  if (!workspace.workspaceId) {
+    throw new Error("Workspace response missing workspaceId.");
+  }
+
+  const workspacePath = gtm.toWorkspacePath(accountId, containerId, workspace.workspaceId);
+  const versionOptions: { name?: string; notes?: string } = {};
+  if (options.versionName) versionOptions.name = options.versionName;
+  if (options.notes) versionOptions.notes = options.notes;
+
+  const res = await gtm.createContainerVersionFromWorkspace(workspacePath, versionOptions);
+
+  if (asJson) {
+    console.log(JSON.stringify(res, null, 2));
+    return;
+  }
+
+  const versionPath = res.containerVersion?.path ?? "?";
+  const versionName = res.containerVersion?.name ?? "?";
+  const versionId = res.containerVersion?.containerVersionId ?? "?";
+  console.log(`created versionId=${versionId}\tname=${versionName}\tpath=${versionPath}`);
+}
+
+async function publishVersion(gtm: GtmClient, containerVersionPath: string, asJson: boolean): Promise<void> {
+  const res = await gtm.publishContainerVersion(containerVersionPath);
+  if (asJson) {
+    console.log(JSON.stringify(res, null, 2));
+    return;
+  }
+  const versionPath = res.containerVersion?.path ?? "?";
+  const versionName = res.containerVersion?.name ?? "?";
+  const versionId = res.containerVersion?.containerVersionId ?? "?";
+  console.log(`published versionId=${versionId}\tname=${versionName}\tpath=${versionPath}`);
 }
 
 async function main(): Promise<void> {
@@ -178,6 +242,78 @@ async function main(): Promise<void> {
         args.workspaceName,
         asJson
       );
+      return;
+    }
+    case "list-workspaces": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id")
+      });
+
+      await listWorkspaces(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
+        asJson
+      );
+      return;
+    }
+    case "create-version": {
+      const schema = z
+        .object({
+          accountId: z.string().min(1),
+          containerId: z.string().min(1),
+          workspaceName: z.string().min(1),
+          versionName: z.string().min(1).optional(),
+          notes: z.string().min(1).optional()
+        })
+        .strict();
+
+      const args = schema.parse({
+        accountId: getStringFlag(parsed.flags, "account-id"),
+        containerId: getStringFlag(parsed.flags, "container-id"),
+        workspaceName: getStringFlag(parsed.flags, "workspace-name"),
+        versionName: getStringFlag(parsed.flags, "version-name"),
+        notes: getStringFlag(parsed.flags, "notes")
+      });
+
+      const versionInput: { versionName?: string; notes?: string } = {};
+      if (args.versionName) versionInput.versionName = args.versionName;
+      if (args.notes) versionInput.notes = args.notes;
+
+      await createVersionFromWorkspace(
+        gtm,
+        {
+          accountId: args.accountId,
+          containerId: args.containerId
+        },
+        args.workspaceName,
+        versionInput,
+        asJson
+      );
+      return;
+    }
+    case "publish-version": {
+      const schema = z
+        .object({
+          versionPath: z.string().min(1)
+        })
+        .strict();
+
+      const args = schema.parse({
+        versionPath: getStringFlag(parsed.flags, "version-path")
+      });
+
+      await publishVersion(gtm, args.versionPath, asJson);
       return;
     }
     default: {
