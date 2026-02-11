@@ -952,12 +952,13 @@ async function syncRepoFromConfig(
           liveDiff.zones
         ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
         if (hasDrift) {
+          const version = live.path ? { versionPath: live.path } : undefined;
           results.push({
             key: c.key,
             labels: c.labels ?? {},
             error:
               "Live published version differs from desired state; refusing to sync without --force. Run diff-live for details.",
-            version: { versionPath: live.path ?? undefined }
+            ...(version ? { version } : {})
           });
           hadError = true;
           continue;
