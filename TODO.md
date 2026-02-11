@@ -87,7 +87,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ### Diff engine
 - [x] Fetch current GTM workspace state (tags/triggers/variables/templates)
-- [ ] Normalize API responses into a deterministic canonical form
+- [x] Normalize API responses into a deterministic canonical form
 - [x] Compute a semantic diff:
   - [x] Additions
   - [x] Deletions
@@ -97,26 +97,26 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Machine-readable (JSON artifact)
 
 ### Sync engine
-- [ ] Apply changes to the workspace in a safe order:
-  - [ ] Custom templates first (if needed by tags/variables)
-  - [ ] Variables
-  - [ ] Triggers
-  - [ ] Tags (depends on triggers/variables)
+- [x] Apply changes to the workspace in a safe order:
+  - [x] Custom templates first (if needed by tags/variables)
+  - [x] Variables
+  - [x] Triggers
+  - [x] Tags (depends on triggers/variables)
 - [ ] Handle referential integrity:
-  - [ ] Trigger IDs referenced by tags
+  - [x] Trigger IDs referenced by tags
   - [ ] Variable references inside tag parameters
-- [ ] Implement idempotent upserts by name + stable identifiers
+- [x] Implement idempotent upserts by name + stable identifiers
 - [ ] Add drift detection (current != desired) and fail CI when drift exists (optional policy)
 
 ---
 
 ## Phase 4 — CI/CD & Publishing
 
-- [ ] Add GitHub Actions workflow for:
-  - [ ] Install dependencies
-  - [ ] Typecheck
-  - [ ] Lint
-  - [ ] Run unit tests
+- [x] Add GitHub Actions workflow for:
+  - [x] Install dependencies
+  - [x] Typecheck
+  - [x] Lint
+  - [x] Run unit tests
 - [ ] Add workflow to run “diff” on PRs and upload diff artifacts
 - [ ] Add workflow to run “sync” on main merges (protected environments)
 - [ ] Automate version creation + publishing:
