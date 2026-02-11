@@ -18,9 +18,31 @@ export async function fetchWorkspaceSnapshot(gtm: GtmClient, workspacePath: stri
     gtm.listTriggers(workspacePath),
     gtm.listVariables(workspacePath),
     gtm.listTemplates(workspacePath),
-    gtm.listZones(workspacePath)
+    listZonesSafe(gtm, workspacePath)
   ]);
 
   return { tags, triggers, variables, templates, zones };
+}
+
+function parseStatusFromErrorMessage(err: unknown): number | undefined {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = msg.match(/status=(\d{3})/);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+async function listZonesSafe(gtm: GtmClient, workspacePath: string): Promise<tagmanager_v2.Schema$Zone[]> {
+  try {
+    return await gtm.listZones(workspacePath);
+  } catch (err: unknown) {
+    // Zones are commonly associated with GTM 360. For GTM free or non-eligible
+    // containers, the API can respond with 403/404. Treat as "no zones".
+    const status = parseStatusFromErrorMessage(err);
+    if (status === 403 || status === 404) {
+      return [];
+    }
+    throw err;
+  }
 }
 
