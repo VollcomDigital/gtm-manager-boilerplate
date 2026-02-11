@@ -19,3 +19,21 @@ export const zWorkspaceDesiredState = z
 
 export type WorkspaceDesiredState = z.infer<typeof zWorkspaceDesiredState>;
 
+/**
+ * Partial desired-state schema for overlay configs.
+ *
+ * Lists are optional so an overlay can specify only the entities it wants to
+ * add/override without wiping the base config.
+ */
+export const zWorkspaceDesiredStatePartial = z
+  .object({
+    workspaceName: z.string().trim().min(1),
+    tags: z.array(zGtmTag).optional(),
+    triggers: z.array(zGtmTrigger).optional(),
+    variables: z.array(zGtmVariable).optional(),
+    templates: z.array(zGtmCustomTemplate).optional()
+  })
+  .strict();
+
+export type WorkspaceDesiredStatePartial = z.infer<typeof zWorkspaceDesiredStatePartial>;
+

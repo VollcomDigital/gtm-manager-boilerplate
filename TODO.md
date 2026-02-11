@@ -81,9 +81,9 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Variables
   - [x] Custom templates
 - [x] Define schema with Zod and generate TypeScript types
-- [ ] Create config loader:
-  - [ ] Supports multiple environments (dev/stage/prod)
-  - [ ] Supports per-container overlays (base + overrides)
+- [x] Create config loader:
+  - [x] Supports multiple environments (dev/stage/prod)
+  - [x] Supports per-container overlays (base + overrides)
 
 ### Diff engine
 - [x] Fetch current GTM workspace state (tags/triggers/variables/templates)
