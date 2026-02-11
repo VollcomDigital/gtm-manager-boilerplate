@@ -127,6 +127,6 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
   - [x] Service account key via GitHub OIDC (preferred) or encrypted secret
   - [x] Avoid storing JSON keys in repo
 - [ ] Release process:
-  - [ ] Version the IaC tool (semantic releases)
-  - [ ] Generate changelogs
+  - [x] Version the IaC tool (semantic releases)
+  - [x] Generate changelogs
 

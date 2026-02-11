@@ -235,6 +235,9 @@ Required vars for push-based sync:
 - `GTM_WORKSPACE_NAME`
 - `GTM_DESIRED_CONFIG_PATH`
 
+### Releases (optional)
+There is a manual `release` workflow (`workflow_dispatch`) powered by **semantic-release**. It tags releases and updates `CHANGELOG.md` based on Conventional Commits.
+
 ### Example automation script
 `src/index.ts` demonstrates:
 - authenticating
