@@ -113,7 +113,14 @@ export class GtmClient {
   }
 
   private normalizePath(p: string): string {
-    return p.replace(/\/+$/, "");
+    let end = p.length;
+    while (end > 0 && p.charCodeAt(end - 1) === 47) {
+      end -= 1;
+    }
+    if (end === p.length) {
+      return p;
+    }
+    return p.slice(0, end);
   }
 
   private childPath(parent: string, resource: string, id: string): string {

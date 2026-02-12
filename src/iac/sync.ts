@@ -1113,12 +1113,35 @@ function collectVariableReferencesFromValues(values: unknown[]): Set<string> {
   return out;
 }
 
+function collectVariableReferencesFromString(input: string, out: Set<string>): void {
+  let cursor = 0;
+  while (cursor < input.length) {
+    const start = input.indexOf("{{", cursor);
+    if (start < 0) {
+      return;
+    }
+
+    const end = input.indexOf("}}", start + 2);
+    if (end < 0) {
+      return;
+    }
+
+    const inner = input.slice(start + 2, end);
+    // GTM variable references cannot contain a closing brace.
+    if (!inner.includes("}")) {
+      const name = inner.trim();
+      if (name) {
+        out.add(name);
+      }
+    }
+
+    cursor = end + 2;
+  }
+}
+
 function collectVariableReferencesDeep(value: unknown, out: Set<string>): void {
   if (typeof value === "string") {
-    for (const m of value.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) {
-      const name = m[1]?.trim();
-      if (name) out.add(name);
-    }
+    collectVariableReferencesFromString(value, out);
     return;
   }
   if (Array.isArray(value)) {
