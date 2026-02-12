@@ -56,7 +56,7 @@ async function loadWorkspaceDesiredStatePartial(configPath: string): Promise<Wor
 
   if (ext === ".yaml" || ext === ".yml") {
     try {
-      const doc = parseDocument(raw, { uniqueKeys: true, maxAliasCount: 0 });
+      const doc = parseDocument(raw, { uniqueKeys: true });
       if (doc.errors.length > 0) {
         const details = doc.errors.map((e) => e.message).join("; ");
         throw new Error(details);

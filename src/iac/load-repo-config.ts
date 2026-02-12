@@ -191,7 +191,7 @@ async function loadConfigFileAny(resolvedPath: string): Promise<unknown> {
   const raw = await fs.readFile(resolvedPath, "utf-8");
   const ext = path.extname(resolvedPath).toLowerCase();
   if (ext === ".yaml" || ext === ".yml") {
-    const doc = parseDocument(raw, { uniqueKeys: true, maxAliasCount: 0 });
+    const doc = parseDocument(raw, { uniqueKeys: true });
     if (doc.errors.length > 0) {
       const details = doc.errors.map((e) => e.message).join("; ");
       throw new Error(details);
