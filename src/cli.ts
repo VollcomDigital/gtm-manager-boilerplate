@@ -845,14 +845,11 @@ async function diffRepoFromConfig(
 
   for (const c of selected) {
     try {
-      const { accountId, containerId } = await gtm.resolveAccountAndContainer(toLocator(c.target));
-      const ws = await gtm.getOrCreateWorkspace({
-        accountId,
-        containerId,
-        workspaceName: c.workspace.workspaceName
-      });
-      if (!ws.workspaceId) throw new Error("Workspace response missing workspaceId.");
-      const workspacePath = gtm.toWorkspacePath(accountId, containerId, ws.workspaceId);
+      const { workspacePath } = await resolveWorkspacePathByName(
+        gtm,
+        toLocator(c.target),
+        c.workspace.workspaceName
+      );
 
       const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
       const diff = diffWorkspace(c.workspace, snapshot);
@@ -941,6 +938,7 @@ async function syncWorkspaceFromConfig(
   if (opts.blockOnLiveDrift && !opts.force && !opts.dryRun) {
     const live = await gtm.getLiveContainerVersion(containerPath);
     const liveSnapshot = snapshotFromContainerVersion(live);
+    liveSnapshot.environments = await gtm.listEnvironments(containerPath);
     const liveDiff = diffWorkspace(desired, liveSnapshot);
     const hasDrift = [
       liveDiff.environments,
@@ -1021,6 +1019,7 @@ async function syncRepoFromConfig(
       if (opts.blockOnLiveDrift && !opts.force && !opts.dryRun) {
         const live = await gtm.getLiveContainerVersion(containerPath);
         const liveSnapshot = snapshotFromContainerVersion(live);
+        liveSnapshot.environments = await gtm.listEnvironments(containerPath);
         const liveDiff = diffWorkspace(c.workspace, liveSnapshot);
         const hasDrift = [
           liveDiff.environments,
