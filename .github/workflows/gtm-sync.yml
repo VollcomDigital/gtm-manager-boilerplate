@@ -354,6 +354,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          validate_non_empty() {
+            local value="$1"
+            local field="$2"
+            if [[ -z "${value}" || "${value}" == -* || "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
+              echo "Invalid ${field}" >&2
+              exit 2
+            fi
+          }
+
+          validate_non_empty "${GTM_WORKSPACE_NAME}" "GTM_WORKSPACE_NAME"
+          validate_non_empty "${GTM_DESIRED_CONFIG_PATH}" "GTM_DESIRED_CONFIG_PATH"
+
           npm run cli -- sync-workspace \
             --account-id "$GTM_ACCOUNT_ID" \
             --container-id "$GTM_CONTAINER_ID" \
