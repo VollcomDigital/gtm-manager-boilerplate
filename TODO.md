@@ -136,7 +136,7 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ### Expand GTM resource coverage (CRUD + diff/sync)
 - [x] Folders (and optional folder membership management)
-- [ ] Environments (create/update/delete + promote publish flows)
+- [x] Environments (create/update/delete + promote publish flows)
 - [x] Built-in variables (enable/disable + revert)
 - [x] Zones (GTM 360) — CRUD + diff/sync (already supported)
 - [x] Server-side GTM: Clients (CRUD + diff/sync)
@@ -149,11 +149,11 @@ This repository aims to manage Google Tag Manager (GTM) containers **programmati
 
 ### Safety / policy engine
 - [x] Protected entities (never delete by name/label)
-- [ ] Allowlist/denylist by resource type (tags/triggers/vars/templates/zones/...)
+- [x] Allowlist/denylist by resource type (tags/triggers/vars/templates/zones/...)
 - [x] Approval gates for destructive operations (deleteMissing + publish)
 
 ### Testing & reliability
-- [ ] Integration-style tests with canned GTM API fixtures (diff/sync flows)
-- [ ] Contract tests for Zod schemas vs googleapis types (where feasible)
-- [ ] Rate-limit soak tests (retry/backoff validation)
+- [x] Integration-style tests with canned GTM API fixtures (diff/sync flows)
+- [x] Contract tests for Zod schemas vs googleapis types (where feasible)
+- [x] Rate-limit soak tests (retry/backoff validation)
 
