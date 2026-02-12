@@ -46,57 +46,71 @@ jobs:
   sync_dispatch:
     runs-on: ubuntu-latest
 
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' &&
-        secrets.GTM_ACCOUNT_ID != '' &&
-        secrets.GTM_CONTAINER_ID != '' &&
-        (
-          secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' ||
-          (secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '')
-        )
-      }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
 
     permissions:
       contents: read
       id-token: write
 
+    env:
+      GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
+      GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
+      GTM_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
     steps:
+      - name: Validate required secrets
+        id: precheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${GTM_ACCOUNT_ID}" && -n "${GTM_CONTAINER_ID}" && \
+                ( -n "${GTM_SERVICE_ACCOUNT_JSON_B64}" || \
+                  ( -n "${GCP_WORKLOAD_IDENTITY_PROVIDER}" && -n "${GCP_SERVICE_ACCOUNT_EMAIL}" ) ) ]]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "Skipping gtm-sync dispatch: required secrets are not configured."
+          fi
+
       - name: Checkout
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         run: npm ci
 
       - name: Authenticate to Google (OIDC)
         id: gcp_auth
-        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
+        if: ${{ steps.precheck.outputs.enabled == 'true' && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT_EMAIL }}
           create_credentials_file: true
           export_environment_variables: true
 
       - name: Write service account key (fallback)
-        if: ${{ !(secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '') }}
+        if: ${{ steps.precheck.outputs.enabled == 'true' && !(env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT_EMAIL != '') }}
         shell: bash
         run: |
           set -euo pipefail
-          echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
+          echo "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
           echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 
       - name: Sync workspace
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         env:
-          GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
-          GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
           LOG_FORMAT: json
         shell: bash
         run: |
@@ -122,10 +136,8 @@ jobs:
             > gtm.sync.json
 
       - name: Create container version (optional)
-        if: ${{ inputs.publish == true && inputs.dry_run == false }}
+        if: ${{ steps.precheck.outputs.enabled == 'true' && inputs.publish == true && inputs.dry_run == false }}
         env:
-          GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
-          GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
           LOG_FORMAT: json
         shell: bash
         run: |
@@ -143,7 +155,7 @@ jobs:
           node -e 'const fs=require("node:fs"); const j=JSON.parse(fs.readFileSync("gtm.create-version.json","utf8")); const p=j?.containerVersion?.path; if(!p) { console.error("Missing containerVersion.path"); process.exit(2); } fs.writeFileSync("gtm.version-path.txt", p);'
 
       - name: Publish container version (optional)
-        if: ${{ inputs.publish == true && inputs.dry_run == false }}
+        if: ${{ steps.precheck.outputs.enabled == 'true' && inputs.publish == true && inputs.dry_run == false }}
         env:
           LOG_FORMAT: json
         shell: bash
@@ -203,6 +215,7 @@ jobs:
           NODE
 
       - name: Upload artifacts
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtm-sync-artifacts
@@ -220,56 +233,73 @@ jobs:
       ${{
         github.event_name == 'push' &&
         vars.GTM_SYNC_ON_PUSH == 'true' &&
-        secrets.GTM_ACCOUNT_ID != '' &&
-        secrets.GTM_CONTAINER_ID != '' &&
         vars.GTM_WORKSPACE_NAME != '' &&
-        vars.GTM_DESIRED_CONFIG_PATH != '' &&
-        (
-          secrets.GTM_SERVICE_ACCOUNT_JSON_B64 != '' ||
-          (secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '')
-        )
+        vars.GTM_DESIRED_CONFIG_PATH != ''
       }}
 
     permissions:
       contents: read
       id-token: write
 
+    env:
+      GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
+      GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
+      GTM_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
     steps:
+      - name: Validate required secrets
+        id: precheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${GTM_ACCOUNT_ID}" && -n "${GTM_CONTAINER_ID}" && \
+                ( -n "${GTM_SERVICE_ACCOUNT_JSON_B64}" || \
+                  ( -n "${GCP_WORKLOAD_IDENTITY_PROVIDER}" && -n "${GCP_SERVICE_ACCOUNT_EMAIL}" ) ) ]]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "Skipping gtm-sync push: required secrets are not configured."
+          fi
+
       - name: Checkout
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         run: npm ci
 
       - name: Authenticate to Google (OIDC)
         id: gcp_auth
-        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
+        if: ${{ steps.precheck.outputs.enabled == 'true' && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT_EMAIL }}
           create_credentials_file: true
           export_environment_variables: true
 
       - name: Write service account key (fallback)
-        if: ${{ !(secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '') }}
+        if: ${{ steps.precheck.outputs.enabled == 'true' && !(env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT_EMAIL != '') }}
         shell: bash
         run: |
           set -euo pipefail
-          echo "${{ secrets.GTM_SERVICE_ACCOUNT_JSON_B64 }}" | base64 --decode > gtm-service-account.json
+          echo "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
           echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 
       - name: Sync workspace (push)
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         env:
-          GTM_ACCOUNT_ID: ${{ secrets.GTM_ACCOUNT_ID }}
-          GTM_CONTAINER_ID: ${{ secrets.GTM_CONTAINER_ID }}
           GTM_WORKSPACE_NAME: ${{ vars.GTM_WORKSPACE_NAME }}
           GTM_DESIRED_CONFIG_PATH: ${{ vars.GTM_DESIRED_CONFIG_PATH }}
           LOG_FORMAT: json
@@ -285,6 +315,7 @@ jobs:
             > gtm.sync.json
 
       - name: Upload artifacts (push)
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtm-sync-push-artifacts
