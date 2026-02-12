@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
+          printf '%s' "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
           echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 

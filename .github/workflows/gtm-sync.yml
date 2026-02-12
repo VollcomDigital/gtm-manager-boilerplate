@@ -104,25 +104,54 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
+          printf '%s' "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
           echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 
       - name: Sync workspace
         if: ${{ steps.precheck.outputs.enabled == 'true' }}
         env:
+          WORKSPACE_NAME_INPUT: ${{ inputs.workspace_name }}
+          CONFIG_PATH_INPUT: ${{ inputs.desired_config_path }}
+          DELETE_MISSING_INPUT: ${{ inputs.delete_missing }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
           LOG_FORMAT: json
         shell: bash
         run: |
           set -euo pipefail
-          WORKSPACE_NAME="${{ inputs.workspace_name }}"
-          CONFIG_PATH="${{ inputs.desired_config_path }}"
+          validate_non_empty() {
+            local value="$1"
+            local field="$2"
+            if [[ -z "${value}" || "${value}" == -* || "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
+              echo "Invalid ${field}" >&2
+              exit 2
+            fi
+          }
+
+          parse_bool() {
+            local value="$1"
+            case "${value}" in
+              true|false) printf '%s' "${value}" ;;
+              *)
+                echo "Invalid boolean input: ${value}" >&2
+                exit 2
+                ;;
+            esac
+          }
+
+          WORKSPACE_NAME="${WORKSPACE_NAME_INPUT}"
+          CONFIG_PATH="${CONFIG_PATH_INPUT}"
+          DELETE_MISSING="$(parse_bool "${DELETE_MISSING_INPUT}")"
+          DRY_RUN="$(parse_bool "${DRY_RUN_INPUT}")"
+
+          validate_non_empty "${WORKSPACE_NAME}" "workspace_name"
+          validate_non_empty "${CONFIG_PATH}" "desired_config_path"
 
           EXTRA_ARGS=()
-          if [[ "${{ inputs.delete_missing }}" == "true" ]]; then
+          if [[ "${DELETE_MISSING}" == "true" ]]; then
             EXTRA_ARGS+=(--delete-missing --confirm)
           fi
-          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+          if [[ "${DRY_RUN}" == "true" ]]; then
             EXTRA_ARGS+=(--dry-run)
           fi
 
@@ -138,17 +167,36 @@ jobs:
       - name: Create container version (optional)
         if: ${{ steps.precheck.outputs.enabled == 'true' && inputs.publish == true && inputs.dry_run == false }}
         env:
+          WORKSPACE_NAME_INPUT: ${{ inputs.workspace_name }}
+          VERSION_NAME_INPUT: ${{ inputs.version_name }}
+          VERSION_NOTES_INPUT: ${{ inputs.version_notes }}
           LOG_FORMAT: json
         shell: bash
         run: |
           set -euo pipefail
-          WORKSPACE_NAME="${{ inputs.workspace_name }}"
+          validate_non_empty() {
+            local value="$1"
+            local field="$2"
+            if [[ -z "${value}" || "${value}" == -* || "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
+              echo "Invalid ${field}" >&2
+              exit 2
+            fi
+          }
+
+          WORKSPACE_NAME="${WORKSPACE_NAME_INPUT}"
+          VERSION_NAME="${VERSION_NAME_INPUT}"
+          VERSION_NOTES="${VERSION_NOTES_INPUT}"
+
+          validate_non_empty "${WORKSPACE_NAME}" "workspace_name"
+          validate_non_empty "${VERSION_NAME}" "version_name"
+          validate_non_empty "${VERSION_NOTES}" "version_notes"
+
           npm run cli -- create-version \
             --account-id "$GTM_ACCOUNT_ID" \
             --container-id "$GTM_CONTAINER_ID" \
             --workspace-name "$WORKSPACE_NAME" \
-            --version-name "${{ inputs.version_name }}" \
-            --notes "${{ inputs.version_notes }}" \
+            --version-name "$VERSION_NAME" \
+            --notes "$VERSION_NOTES" \
             --json \
             > gtm.create-version.json
 
@@ -161,7 +209,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION_PATH="$(cat gtm.version-path.txt)"
+          VERSION_PATH="$(<gtm.version-path.txt)"
           npm run cli -- publish-version --version-path "$VERSION_PATH" --confirm --json > gtm.publish-version.json
 
       - name: Write job summary
@@ -293,7 +341,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
+          printf '%s' "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
           echo "Wrote gtm-service-account.json"
           echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
 
