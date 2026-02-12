@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parseDocument } from "yaml";
 import {
   zRepoConfig,
   zRepoConfigPartial,
@@ -191,7 +191,12 @@ async function loadConfigFileAny(resolvedPath: string): Promise<unknown> {
   const raw = await fs.readFile(resolvedPath, "utf-8");
   const ext = path.extname(resolvedPath).toLowerCase();
   if (ext === ".yaml" || ext === ".yml") {
-    return parseYaml(raw);
+    const doc = parseDocument(raw, { uniqueKeys: true, maxAliasCount: 0 });
+    if (doc.errors.length > 0) {
+      const details = doc.errors.map((e) => e.message).join("; ");
+      throw new Error(details);
+    }
+    return doc.toJS();
   }
   return JSON.parse(raw);
 }

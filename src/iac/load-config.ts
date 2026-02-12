@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parseDocument } from "yaml";
 import {
   zWorkspaceDesiredState,
   zWorkspaceDesiredStatePartial,
@@ -56,7 +56,12 @@ async function loadWorkspaceDesiredStatePartial(configPath: string): Promise<Wor
 
   if (ext === ".yaml" || ext === ".yml") {
     try {
-      parsed = parseYaml(raw);
+      const doc = parseDocument(raw, { uniqueKeys: true, maxAliasCount: 0 });
+      if (doc.errors.length > 0) {
+        const details = doc.errors.map((e) => e.message).join("; ");
+        throw new Error(details);
+      }
+      parsed = doc.toJS();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Invalid YAML in "${resolved}": ${msg}`);
