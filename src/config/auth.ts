@@ -69,12 +69,28 @@ export function createGoogleAuth(options: CreateGoogleAuthOptions = {}): GoogleA
     return new GoogleAuth({ scopes: [...scopes] });
   }
 
-  const resolved = path.isAbsolute(keyFilePath) ? keyFilePath : path.resolve(process.cwd(), keyFilePath);
+  if (keyFilePath.includes("\n") || keyFilePath.includes("\r")) {
+    throw new Error("Service account key file path must be a single-line absolute path.");
+  }
+
+  if (!path.isAbsolute(keyFilePath)) {
+    throw new Error(
+      `Service account key file path must be absolute: "${keyFilePath}". ` +
+        `Set GTM_CREDENTIALS_PATH (or GOOGLE_APPLICATION_CREDENTIALS) to an absolute path.`
+    );
+  }
+
+  const resolved = path.normalize(keyFilePath);
   if (!fs.existsSync(resolved)) {
     throw new Error(
       `Service account key file not found at "${resolved}". ` +
         `Set GTM_CREDENTIALS_PATH (or GOOGLE_APPLICATION_CREDENTIALS) to an absolute path.`
     );
+  }
+
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) {
+    throw new Error(`Service account key path is not a file: "${resolved}".`);
   }
 
   return new GoogleAuth({
