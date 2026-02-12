@@ -174,8 +174,14 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
       b.variables = mergeStringSet(b.variables, o.variables);
       b.templates = mergeStringSet(b.templates, o.templates);
       b.zones = mergeStringSet(b.zones, o.zones);
-      out.policy.deleteAllowTypes = mergeStringSet(out.policy.deleteAllowTypes, p.policy.deleteAllowTypes);
-      out.policy.deleteDenyTypes = mergeStringSet(out.policy.deleteDenyTypes, p.policy.deleteDenyTypes);
+      out.policy.deleteAllowTypes = mergeStringSet(
+        out.policy.deleteAllowTypes,
+        p.policy.deleteAllowTypes
+      ) as WorkspaceDesiredState["policy"]["deleteAllowTypes"];
+      out.policy.deleteDenyTypes = mergeStringSet(
+        out.policy.deleteDenyTypes,
+        p.policy.deleteDenyTypes
+      ) as WorkspaceDesiredState["policy"]["deleteDenyTypes"];
     }
     if (p.builtInVariableTypes) out.builtInVariableTypes = mergeStringSet(out.builtInVariableTypes, p.builtInVariableTypes);
     if (p.environments) out.environments = mergeByName(out.environments, p.environments);
