@@ -8,6 +8,17 @@ import {
   type WorkspaceDesiredStatePartial
 } from "./workspace-config";
 
+const WORKSPACE_ROOT = path.resolve(process.cwd());
+
+function resolvePathWithinWorkspace(inputPath: string): string {
+  const resolved = path.resolve(WORKSPACE_ROOT, inputPath);
+  const relative = path.relative(WORKSPACE_ROOT, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Config path must be within workspace root: "${inputPath}"`);
+  }
+  return resolved;
+}
+
 /**
  * Loads a desired-state workspace config from one or more files.
  *
@@ -37,7 +48,7 @@ export async function loadWorkspaceDesiredState(configPath: string): Promise<Wor
 }
 
 async function loadWorkspaceDesiredStatePartial(configPath: string): Promise<WorkspaceDesiredStatePartial> {
-  const resolved = path.isAbsolute(configPath) ? configPath : path.resolve(process.cwd(), configPath);
+  const resolved = resolvePathWithinWorkspace(configPath);
   const raw = await fs.readFile(resolved, "utf-8");
 
   const ext = path.extname(resolved).toLowerCase();

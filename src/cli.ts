@@ -23,6 +23,8 @@ interface ParsedCli {
   positionals: string[];
 }
 
+const WORKSPACE_ROOT = path.resolve(process.cwd());
+
 function parseCli(argv: string[]): ParsedCli {
   const [command, ...rest] = argv;
   const flags: Record<string, FlagValue> = {};
@@ -181,6 +183,15 @@ function parseLabelsFilter(value: string | undefined): Record<string, string> {
     out[k] = v;
   }
   return out;
+}
+
+function resolvePathWithinWorkspace(inputPath: string, fieldName: string): string {
+  const resolved = path.resolve(WORKSPACE_ROOT, inputPath);
+  const relative = path.relative(WORKSPACE_ROOT, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`${fieldName} must be within workspace root: "${inputPath}"`);
+  }
+  return resolved;
 }
 
 function matchesLabels(labels: Record<string, string> | undefined, filter: Record<string, string>): boolean {
@@ -689,7 +700,7 @@ async function exportWorkspaceSnapshot(
   const json = JSON.stringify(desiredLike, null, 2);
 
   if (outPath) {
-    const resolved = path.isAbsolute(outPath) ? outPath : path.resolve(process.cwd(), outPath);
+    const resolved = resolvePathWithinWorkspace(outPath, "out");
     await fs.writeFile(resolved, json, "utf-8");
     if (!asJson) {
       console.log(`wrote ${resolved}`);
@@ -1151,17 +1162,22 @@ async function main(): Promise<void> {
   const gtm = new GtmClient(auth, { logger });
 
   const asJson = isJsonFlagSet(parsed.flags);
-  const dryRun = parsed.flags["dry-run"] === true || parsed.flags.dryRun === true;
-  const deleteMissing = parsed.flags["delete-missing"] === true || parsed.flags.deleteMissing === true;
-  const failOnDrift = parsed.flags["fail-on-drift"] === true || parsed.flags.failOnDrift === true;
-  const ignoreDeletes = parsed.flags["ignore-deletes"] === true || parsed.flags.ignoreDeletes === true;
+  const dryRun = getBooleanFlag(parsed.flags, "dry-run") ?? getBooleanFlag(parsed.flags, "dryRun") ?? false;
+  const deleteMissing =
+    getBooleanFlag(parsed.flags, "delete-missing") ?? getBooleanFlag(parsed.flags, "deleteMissing") ?? false;
+  const failOnDrift =
+    getBooleanFlag(parsed.flags, "fail-on-drift") ?? getBooleanFlag(parsed.flags, "failOnDrift") ?? false;
+  const ignoreDeletes =
+    getBooleanFlag(parsed.flags, "ignore-deletes") ?? getBooleanFlag(parsed.flags, "ignoreDeletes") ?? false;
   const validateVariableRefs =
-    parsed.flags["validate-variable-refs"] === true || parsed.flags.validateVariableRefs === true;
-  const publish = parsed.flags.publish === true;
+    getBooleanFlag(parsed.flags, "validate-variable-refs") ??
+    getBooleanFlag(parsed.flags, "validateVariableRefs") ??
+    false;
+  const publish = getBooleanFlag(parsed.flags, "publish") ?? false;
   const blockOnLiveDrift =
-    parsed.flags["block-on-live-drift"] === true || parsed.flags.blockOnLiveDrift === true;
-  const force = parsed.flags.force === true;
-  const confirmFlag = parsed.flags.confirm === true || parsed.flags.yes === true;
+    getBooleanFlag(parsed.flags, "block-on-live-drift") ?? getBooleanFlag(parsed.flags, "blockOnLiveDrift") ?? false;
+  const force = getBooleanFlag(parsed.flags, "force") ?? false;
+  const confirmFlag = getBooleanFlag(parsed.flags, "confirm") ?? getBooleanFlag(parsed.flags, "yes") ?? false;
 
   switch (parsed.command) {
     case "list-accounts": {
@@ -1479,7 +1495,7 @@ async function main(): Promise<void> {
         gtm,
         args.environmentPath,
         args.versionPath,
-        { reauthorize: parsed.flags.reauthorize === true },
+        { reauthorize: getBooleanFlag(parsed.flags, "reauthorize") ?? false },
         asJson,
         dryRun
       );
@@ -1495,7 +1511,7 @@ async function main(): Promise<void> {
 
       const args = schema.parse({
         environmentPath: getStringFlag(parsed.flags, "environment-path"),
-        confirm: parsed.flags.confirm === true || parsed.flags.yes === true
+        confirm: confirmFlag
       });
 
       await deleteEnvironment(gtm, args.environmentPath, dryRun);
@@ -1511,7 +1527,7 @@ async function main(): Promise<void> {
 
       const args = schema.parse({
         workspacePath: getStringFlag(parsed.flags, "workspace-path"),
-        confirm: parsed.flags.confirm === true || parsed.flags.yes === true
+        confirm: confirmFlag
       });
 
       await deleteWorkspace(gtm, args.workspacePath, dryRun);
@@ -1531,7 +1547,7 @@ async function main(): Promise<void> {
         accountId: getStringFlag(parsed.flags, "account-id"),
         containerId: getStringFlag(parsed.flags, "container-id"),
         workspaceName: getStringFlag(parsed.flags, "workspace-name"),
-        confirm: parsed.flags.confirm === true || parsed.flags.yes === true
+        confirm: confirmFlag
       });
 
       await resetWorkspace(
@@ -1633,7 +1649,6 @@ async function main(): Promise<void> {
       return;
     }
     case "sync-workspace": {
-      const confirmFlag = parsed.flags.confirm === true || parsed.flags.yes === true;
       const schema = z
         .object({
           accountId: z.string().min(1),

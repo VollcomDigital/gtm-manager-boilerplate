@@ -11,6 +11,17 @@ import {
   type RepoContainerPartial
 } from "./repo-config";
 
+const WORKSPACE_ROOT = path.resolve(process.cwd());
+
+function resolvePathWithinWorkspace(inputPath: string): string {
+  const resolved = path.resolve(WORKSPACE_ROOT, inputPath);
+  const relative = path.relative(WORKSPACE_ROOT, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Config path must be within workspace root: "${inputPath}"`);
+  }
+  return resolved;
+}
+
 function lower(s: string): string {
   return s.trim().toLowerCase();
 }
@@ -186,7 +197,7 @@ async function loadConfigFileAny(resolvedPath: string): Promise<unknown> {
 }
 
 async function loadRepoConfigPart(configPath: string): Promise<RepoConfigPartial> {
-  const resolved = path.isAbsolute(configPath) ? configPath : path.resolve(process.cwd(), configPath);
+  const resolved = resolvePathWithinWorkspace(configPath);
   let parsed: unknown;
   try {
     parsed = await loadConfigFileAny(resolved);
