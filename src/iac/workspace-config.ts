@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   zGtmCustomTemplate,
+  zGtmEnvironmentDesired,
   zGtmFolder,
   zGtmServerClient,
   zGtmServerTransformation,
@@ -12,6 +13,7 @@ import {
 
 type WorkspaceProtectedNames = {
   builtInVariableTypes: string[];
+  environments: string[];
   folders: string[];
   clients: string[];
   transformations: string[];
@@ -25,6 +27,7 @@ type WorkspaceProtectedNames = {
 function makeEmptyProtectedNames(): WorkspaceProtectedNames {
   return {
     builtInVariableTypes: [],
+    environments: [],
     folders: [],
     clients: [],
     transformations: [],
@@ -36,9 +39,23 @@ function makeEmptyProtectedNames(): WorkspaceProtectedNames {
   };
 }
 
+export const zWorkspaceResourceType = z.enum([
+  "builtInVariableTypes",
+  "environments",
+  "folders",
+  "clients",
+  "transformations",
+  "tags",
+  "triggers",
+  "variables",
+  "templates",
+  "zones"
+]);
+
 const zWorkspaceProtectedNames = z
   .object({
     builtInVariableTypes: z.array(z.string().trim().min(1)).default([]),
+    environments: z.array(z.string().trim().min(1)).default([]),
     folders: z.array(z.string().trim().min(1)).default([]),
     clients: z.array(z.string().trim().min(1)).default([]),
     transformations: z.array(z.string().trim().min(1)).default([]),
@@ -53,10 +70,16 @@ const zWorkspaceProtectedNames = z
 
 export const zWorkspacePolicy = z
   .object({
-    protectedNames: zWorkspaceProtectedNames
+    protectedNames: zWorkspaceProtectedNames,
+    deleteAllowTypes: z.array(zWorkspaceResourceType).default([]),
+    deleteDenyTypes: z.array(zWorkspaceResourceType).default([])
   })
   .strict()
-  .default(() => ({ protectedNames: makeEmptyProtectedNames() }));
+  .default(() => ({
+    protectedNames: makeEmptyProtectedNames(),
+    deleteAllowTypes: [],
+    deleteDenyTypes: []
+  }));
 
 /**
  * Minimal desired-state schema for a single GTM Workspace.
@@ -69,6 +92,7 @@ export const zWorkspaceDesiredState = z
     workspaceName: z.string().trim().min(1),
     policy: zWorkspacePolicy,
     builtInVariableTypes: z.array(z.string().trim().min(1)).default([]),
+    environments: z.array(zGtmEnvironmentDesired).default([]),
     folders: z.array(zGtmFolder).default([]),
     clients: z.array(zGtmServerClient).default([]),
     transformations: z.array(zGtmServerTransformation).default([]),
@@ -93,6 +117,7 @@ export const zWorkspaceDesiredStatePartial = z
     workspaceName: z.string().trim().min(1),
     policy: zWorkspacePolicy.optional(),
     builtInVariableTypes: z.array(z.string().trim().min(1)).optional(),
+    environments: z.array(zGtmEnvironmentDesired).optional(),
     folders: z.array(zGtmFolder).optional(),
     clients: z.array(zGtmServerClient).optional(),
     transformations: z.array(zGtmServerTransformation).optional(),
@@ -117,6 +142,7 @@ export const zWorkspaceDesiredStateOverlay = z
     workspaceName: z.string().trim().min(1).optional(),
     policy: zWorkspacePolicy.optional(),
     builtInVariableTypes: z.array(z.string().trim().min(1)).optional(),
+    environments: z.array(zGtmEnvironmentDesired).optional(),
     folders: z.array(zGtmFolder).optional(),
     clients: z.array(zGtmServerClient).optional(),
     transformations: z.array(zGtmServerTransformation).optional(),

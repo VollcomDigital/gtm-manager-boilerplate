@@ -94,6 +94,7 @@ Commands:
   get-environment --environment-path <accounts/.../containers/.../environments/...> [--json]
   create-environment --account-id <id> --container-id <id|GTM-XXXX> --name <name> [--type USER] [--url <url>] [--enable-debug true|false] [--description <text>] [--json]
   update-environment --environment-path <accounts/.../containers/.../environments/...> [--name <name>] [--url <url>] [--enable-debug true|false] [--description <text>] [--container-version-id <id>] [--workspace-id <id>] [--json]
+  promote-environment --environment-path <accounts/.../containers/.../environments/...> --version-path <accounts/.../containers/.../versions/...> [--reauthorize] --confirm [--json]
   delete-environment --environment-path <accounts/.../containers/.../environments/...> --confirm
   delete-workspace --workspace-path <accounts/.../containers/.../workspaces/...> --confirm
   reset-workspace --account-id <id> --container-id <id|GTM-XXXX> --workspace-name <name> --confirm [--json]
@@ -120,6 +121,7 @@ Examples:
   npm run cli -- create-environment --account-id 123 --container-id 456 --name "Staging" --type USER --url "https://example.com" --enable-debug true --json
   npm run cli -- get-environment --environment-path accounts/123/containers/456/environments/7 --json
   npm run cli -- update-environment --environment-path accounts/123/containers/456/environments/7 --enable-debug false --json
+  npm run cli -- promote-environment --environment-path accounts/123/containers/456/environments/7 --version-path accounts/123/containers/456/versions/11 --reauthorize --confirm --json
   npm run cli -- delete-environment --environment-path accounts/123/containers/456/environments/7 --confirm
   npm run cli -- delete-workspace --workspace-path accounts/123/containers/456/workspaces/999 --confirm
   npm run cli -- reset-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --confirm --json
@@ -501,6 +503,77 @@ async function updateEnvironment(
   console.log(`updated environmentId=${updated.environmentId ?? "?"}\tname=${updated.name ?? "?"}\tpath=${updated.path ?? "?"}`);
 }
 
+async function promoteEnvironment(
+  gtm: GtmClient,
+  environmentPath: string,
+  versionPath: string,
+  options: { reauthorize: boolean },
+  asJson: boolean,
+  dryRun: boolean
+): Promise<void> {
+  if (dryRun) {
+    console.log(
+      JSON.stringify(
+        {
+          dryRun: true,
+          action: "promoteEnvironment",
+          environmentPath,
+          versionPath,
+          reauthorize: options.reauthorize
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  const version = await gtm.getContainerVersion(versionPath);
+  const containerVersionId = version.containerVersionId ?? undefined;
+  if (!containerVersionId) {
+    throw new Error(`Version payload missing containerVersionId: path=${versionPath}`);
+  }
+
+  const current = await gtm.getEnvironment(environmentPath);
+  const patch: GtmEnvironment = {
+    ...(current.name != null ? { name: current.name } : {}),
+    ...(current.type != null ? { type: current.type } : {}),
+    ...(current.description != null ? { description: current.description } : {}),
+    ...(current.url != null ? { url: current.url } : {}),
+    ...(current.enableDebug != null ? { enableDebug: current.enableDebug } : {}),
+    ...(current.workspaceId != null ? { workspaceId: current.workspaceId } : {}),
+    containerVersionId
+  };
+
+  const fingerprint = current.fingerprint ?? undefined;
+  const updated = await gtm.updateEnvironment(environmentPath, patch, fingerprint ? { fingerprint } : {});
+  const finalEnv =
+    options.reauthorize && (updated.path ?? environmentPath)
+      ? await gtm.reauthorizeEnvironment(updated.path ?? environmentPath)
+      : updated;
+
+  if (asJson) {
+    console.log(
+      JSON.stringify(
+        {
+          promotedToVersion: {
+            path: versionPath,
+            containerVersionId
+          },
+          environment: finalEnv
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  console.log(
+    `promoted environmentId=${finalEnv.environmentId ?? "?"}\tname=${finalEnv.name ?? "?"}\tcontainerVersionId=${containerVersionId}`
+  );
+}
+
 async function deleteEnvironment(gtm: GtmClient, environmentPath: string, dryRun: boolean): Promise<void> {
   if (dryRun) {
     console.log(JSON.stringify({ dryRun: true, action: "deleteEnvironment", environmentPath }));
@@ -598,6 +671,7 @@ async function exportWorkspaceSnapshot(
 
   const desiredLike = {
     workspaceName,
+    environments: snapshot.environments.map((e) => normalizeForDiff(e)),
     builtInVariableTypes: snapshot.builtInVariables
       .map((v) => v.type)
       .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
@@ -640,6 +714,7 @@ async function diffWorkspaceFromConfig(
   const diff = diffWorkspace(desired, snapshot);
 
   if (options.ignoreDeletes) {
+    diff.environments.delete = [];
     diff.builtInVariables.delete = [];
     diff.folders.delete = [];
     diff.clients.delete = [];
@@ -652,6 +727,7 @@ async function diffWorkspaceFromConfig(
   }
 
   const hasDrift = [
+    diff.environments,
     diff.builtInVariables,
     diff.folders,
     diff.clients,
@@ -689,9 +765,11 @@ async function diffLiveFromConfig(
   const containerPath = gtm.toContainerPath(accountId, containerId);
   const live = await gtm.getLiveContainerVersion(containerPath);
   const snapshot = snapshotFromContainerVersion(live);
+  snapshot.environments = await gtm.listEnvironments(containerPath);
   const diff = diffWorkspace(desired, snapshot);
 
   if (options.ignoreDeletes) {
+    diff.environments.delete = [];
     diff.builtInVariables.delete = [];
     diff.folders.delete = [];
     diff.clients.delete = [];
@@ -704,6 +782,7 @@ async function diffLiveFromConfig(
   }
 
   const hasDrift = [
+    diff.environments,
     diff.builtInVariables,
     diff.folders,
     diff.clients,
@@ -778,6 +857,7 @@ async function diffRepoFromConfig(
       const snapshot = await fetchWorkspaceSnapshot(gtm, workspacePath);
       const diff = diffWorkspace(c.workspace, snapshot);
       if (options.ignoreDeletes) {
+        diff.environments.delete = [];
         diff.builtInVariables.delete = [];
         diff.folders.delete = [];
         diff.clients.delete = [];
@@ -790,6 +870,7 @@ async function diffRepoFromConfig(
       }
 
       const drift = [
+        diff.environments,
         diff.builtInVariables,
         diff.folders,
         diff.clients,
@@ -862,6 +943,7 @@ async function syncWorkspaceFromConfig(
     const liveSnapshot = snapshotFromContainerVersion(live);
     const liveDiff = diffWorkspace(desired, liveSnapshot);
     const hasDrift = [
+      liveDiff.environments,
       liveDiff.builtInVariables,
       liveDiff.folders,
       liveDiff.clients,
@@ -941,6 +1023,7 @@ async function syncRepoFromConfig(
         const liveSnapshot = snapshotFromContainerVersion(live);
         const liveDiff = diffWorkspace(c.workspace, liveSnapshot);
         const hasDrift = [
+          liveDiff.environments,
           liveDiff.builtInVariables,
           liveDiff.folders,
           liveDiff.clients,
@@ -1376,6 +1459,31 @@ async function main(): Promise<void> {
       };
 
       await updateEnvironment(gtm, args.environmentPath, patch, asJson, dryRun);
+      return;
+    }
+    case "promote-environment": {
+      const schema = z
+        .object({
+          environmentPath: z.string().min(1),
+          versionPath: z.string().min(1),
+          confirm: z.literal(true)
+        })
+        .strict();
+
+      const args = schema.parse({
+        environmentPath: getStringFlag(parsed.flags, "environment-path"),
+        versionPath: getStringFlag(parsed.flags, "version-path"),
+        confirm: dryRun ? true : confirmFlag
+      });
+
+      await promoteEnvironment(
+        gtm,
+        args.environmentPath,
+        args.versionPath,
+        { reauthorize: parsed.flags.reauthorize === true },
+        asJson,
+        dryRun
+      );
       return;
     }
     case "delete-environment": {

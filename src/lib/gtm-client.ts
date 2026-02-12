@@ -314,6 +314,14 @@ export class GtmClient {
     );
   }
 
+  async reauthorizeEnvironment(environmentPath: string): Promise<tagmanager_v2.Schema$Environment> {
+    return await this.requestWithRetry(
+      "GTM environments.reauthorize",
+      () => this.api.accounts.containers.environments.reauthorize({ path: environmentPath }),
+      "write"
+    );
+  }
+
   async findEnvironmentByName(containerPath: string, environmentName: string): Promise<tagmanager_v2.Schema$Environment | undefined> {
     const envs = await this.listEnvironments(containerPath);
     return envs.find((e) => (e.name ?? "").toLowerCase() === environmentName.toLowerCase());

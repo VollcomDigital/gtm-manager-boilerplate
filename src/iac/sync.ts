@@ -2,6 +2,7 @@ import type { tagmanager_v2 } from "googleapis";
 import type { GtmClient } from "../lib/gtm-client";
 import type {
   GtmCustomTemplate,
+  GtmEnvironment,
   GtmFolder,
   GtmServerClient,
   GtmServerTransformation,
@@ -22,6 +23,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function lower(s: string): string {
   return s.trim().toLowerCase();
+}
+
+function containerPathFromWorkspacePath(workspacePath: string): string {
+  const m = workspacePath.match(/^(accounts\/[^/]+\/containers\/[^/]+)\/workspaces\/[^/]+$/);
+  if (!m) {
+    throw new Error(`Invalid workspace path: "${workspacePath}"`);
+  }
+  return m[1]!;
 }
 
 function ensureUniqueNames(entities: Array<{ name: string }>, entityType: string): void {
@@ -161,6 +170,7 @@ export interface EntitySyncSummary {
 
 export interface SyncWorkspaceResult {
   workspacePath: string;
+  environments: EntitySyncSummary;
   templates: EntitySyncSummary;
   variables: EntitySyncSummary;
   builtInVariables: EntitySyncSummary;
@@ -196,6 +206,7 @@ export async function syncWorkspace(
   desired: WorkspaceDesiredState,
   options: SyncWorkspaceOptions
 ): Promise<SyncWorkspaceResult> {
+  ensureUniqueNames(desired.environments, "environment");
   ensureUniqueNames(desired.templates, "template");
   ensureUniqueNames(desired.variables, "variable");
   ensureUniqueNames(desired.clients, "client");
@@ -209,6 +220,7 @@ export async function syncWorkspace(
 
   const res: SyncWorkspaceResult = {
     workspacePath,
+    environments: emptySummary(),
     templates: emptySummary(),
     variables: emptySummary(),
     builtInVariables: emptySummary(),
@@ -223,6 +235,7 @@ export async function syncWorkspace(
 
   const protectedByType = {
     builtInVariableTypes: new Set(desired.policy.protectedNames.builtInVariableTypes.map(lower)),
+    environments: new Set(desired.policy.protectedNames.environments.map(lower)),
     folders: new Set(desired.policy.protectedNames.folders.map(lower)),
     clients: new Set(desired.policy.protectedNames.clients.map(lower)),
     transformations: new Set(desired.policy.protectedNames.transformations.map(lower)),
@@ -232,6 +245,101 @@ export async function syncWorkspace(
     templates: new Set(desired.policy.protectedNames.templates.map(lower)),
     zones: new Set(desired.policy.protectedNames.zones.map(lower))
   };
+
+  const deleteAllowTypes = new Set(desired.policy.deleteAllowTypes.map(lower));
+  const deleteDenyTypes = new Set(desired.policy.deleteDenyTypes.map(lower));
+  const isDeleteAllowedForType = (resourceType: string): boolean => {
+    const t = lower(resourceType);
+    if (deleteDenyTypes.has(t)) return false;
+    if (deleteAllowTypes.size > 0 && !deleteAllowTypes.has(t)) return false;
+    return true;
+  };
+
+  const containerPath = containerPathFromWorkspacePath(workspacePath);
+
+  // ----------------------------
+  // Environments (container-level)
+  // ----------------------------
+  const currentEnvironmentsByName = new Map<string, tagmanager_v2.Schema$Environment>();
+  for (const e of snapshot.environments) {
+    const name = normalizeEntityName(e);
+    if (name) currentEnvironmentsByName.set(lower(name), e);
+  }
+
+  for (const de of desired.environments) {
+    const key = lower(de.name);
+    const existing = currentEnvironmentsByName.get(key);
+    if (!existing) {
+      res.environments.created.push(de.name);
+      if (!options.dryRun) {
+        await gtm.createEnvironment(containerPath, de as unknown as GtmEnvironment);
+      }
+      continue;
+    }
+
+    if (!options.updateExisting) {
+      res.environments.skipped.push(de.name);
+      continue;
+    }
+
+    if (!shouldUpdate(existing, de)) {
+      res.environments.skipped.push(de.name);
+      continue;
+    }
+
+    res.environments.updated.push(de.name);
+    if (!options.dryRun) {
+      const envPath = existing.path ?? undefined;
+      if (!envPath) {
+        throw new Error(`Cannot update environment "${de.name}" (missing path).`);
+      }
+      const merged = mergeDesiredIntoCurrent(existing, de);
+      const body = stripDynamicFieldsDeep(merged) as unknown as GtmEnvironment;
+      const fingerprint = existing.fingerprint ?? undefined;
+      await gtm.updateEnvironment(envPath, body as unknown as GtmEnvironment, fingerprint ? { fingerprint } : {});
+    }
+  }
+
+  if (options.deleteMissing) {
+    const desiredSet = new Set(desired.environments.map((e) => lower(e.name)));
+    for (const [nameLowerKey, existing] of currentEnvironmentsByName.entries()) {
+      if (desiredSet.has(nameLowerKey)) continue;
+
+      const displayName = existing.name ?? nameLowerKey;
+
+      if (!isDeleteAllowedForType("environments")) {
+        res.environments.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "environments": "${displayName}"`);
+        continue;
+      }
+
+      if (protectedByType.environments.has(nameLowerKey)) {
+        res.environments.skipped.push(displayName);
+        res.warnings.push(`Protected environment not deleted: "${displayName}"`);
+        continue;
+      }
+
+      // GTM only allows deleting USER-type environments.
+      const envType = (existing.type ?? "").toUpperCase();
+      if (envType && envType !== "USER") {
+        res.environments.skipped.push(displayName);
+        res.warnings.push(`Non-USER environment not deleted: "${displayName}" (type=${existing.type ?? "?"})`);
+        continue;
+      }
+
+      const envPath = existing.path ?? undefined;
+      if (!envPath) {
+        res.environments.skipped.push(displayName);
+        res.warnings.push(`Environment missing path; cannot delete: "${displayName}"`);
+        continue;
+      }
+
+      res.environments.deleted.push(displayName);
+      if (!options.dryRun) {
+        await gtm.deleteEnvironment(envPath);
+      }
+    }
+  }
 
   // ----------------------------
   // Templates
@@ -302,13 +410,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.templates.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTemplatesByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("templates")) {
+        res.templates.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "templates": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.templates.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.templates.skipped.push(displayName);
         res.warnings.push(`Protected template not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.templates.deleted.push(displayName);
       if (!options.dryRun) {
         if (existing.path) {
@@ -385,13 +497,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.variables.map((v) => lower(v.name)));
     for (const [nameLowerKey, existing] of currentVariablesByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("variables")) {
+        res.variables.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "variables": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.variables.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.variables.skipped.push(displayName);
         res.warnings.push(`Protected variable not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.variables.deleted.push(displayName);
       if (!options.dryRun && existing.variableId) {
         await gtm.deleteVariableById(workspacePath, existing.variableId);
@@ -432,6 +548,11 @@ export async function syncWorkspace(
   if (options.deleteMissing) {
     for (const [k, raw] of currentBuiltInTypesByLower.entries()) {
       if (!desiredBuiltInTypesByLower.has(k)) {
+        if (!isDeleteAllowedForType("builtInVariableTypes")) {
+          res.builtInVariables.skipped.push(raw);
+          res.warnings.push(`Deletion blocked by policy for type "builtInVariableTypes": "${raw}"`);
+          continue;
+        }
         if (protectedByType.builtInVariableTypes.has(k)) {
           res.builtInVariables.skipped.push(raw);
           res.warnings.push(`Protected built-in variable type not disabled: "${raw}"`);
@@ -507,13 +628,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.clients.map((c) => lower(c.name)));
     for (const [nameLowerKey, existing] of currentClientsByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("clients")) {
+        res.clients.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "clients": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.clients.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.clients.skipped.push(displayName);
         res.warnings.push(`Protected client not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.clients.deleted.push(displayName);
       if (!options.dryRun && existing.clientId) {
         await gtm.deleteClientById(workspacePath, existing.clientId);
@@ -572,13 +697,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.transformations.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTransformationsByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("transformations")) {
+        res.transformations.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "transformations": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.transformations.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.transformations.skipped.push(displayName);
         res.warnings.push(`Protected transformation not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.transformations.deleted.push(displayName);
       if (!options.dryRun && existing.transformationId) {
         await gtm.deleteTransformationById(workspacePath, existing.transformationId);
@@ -646,13 +775,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.triggers.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTriggersByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("triggers")) {
+        res.triggers.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "triggers": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.triggers.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.triggers.skipped.push(displayName);
         res.warnings.push(`Protected trigger not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.triggers.deleted.push(displayName);
       if (!options.dryRun && existing.triggerId) {
         await gtm.deleteTriggerById(workspacePath, existing.triggerId);
@@ -711,13 +844,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.zones.map((z) => lower(z.name)));
     for (const [nameLowerKey, existing] of currentZonesByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("zones")) {
+        res.zones.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "zones": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.zones.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.zones.skipped.push(displayName);
         res.warnings.push(`Protected zone not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.zones.deleted.push(displayName);
       if (!options.dryRun && existing.zoneId) {
         await gtm.deleteZoneById(workspacePath, existing.zoneId);
@@ -818,13 +955,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.tags.map((t) => lower(t.name)));
     for (const [nameLowerKey, existing] of currentTagsByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("tags")) {
+        res.tags.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "tags": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.tags.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.tags.skipped.push(displayName);
         res.warnings.push(`Protected tag not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.tags.deleted.push(displayName);
       if (!options.dryRun && existing.tagId) {
         await gtm.deleteTagById(workspacePath, existing.tagId);
@@ -922,13 +1063,17 @@ export async function syncWorkspace(
     const desiredSet = new Set(desired.folders.map((f) => lower(f.name)));
     for (const [nameLowerKey, existing] of currentFoldersByName.entries()) {
       if (desiredSet.has(nameLowerKey)) continue;
+      const displayName = existing.name ?? nameLowerKey;
+      if (!isDeleteAllowedForType("folders")) {
+        res.folders.skipped.push(displayName);
+        res.warnings.push(`Deletion blocked by policy for type "folders": "${displayName}"`);
+        continue;
+      }
       if (protectedByType.folders.has(nameLowerKey)) {
-        const displayName = existing.name ?? nameLowerKey;
         res.folders.skipped.push(displayName);
         res.warnings.push(`Protected folder not deleted: "${displayName}"`);
         continue;
       }
-      const displayName = existing.name ?? nameLowerKey;
       res.folders.deleted.push(displayName);
       if (!options.dryRun && existing.folderId) {
         await gtm.deleteFolderById(workspacePath, existing.folderId);
@@ -938,6 +1083,7 @@ export async function syncWorkspace(
 
   // Sort for stable output.
   for (const summary of [
+    res.environments,
     res.templates,
     res.variables,
     res.builtInVariables,

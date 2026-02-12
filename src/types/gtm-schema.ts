@@ -246,6 +246,17 @@ export const zGtmEnvironment = z
   .passthrough();
 
 /**
+ * Desired-state Environment entry (IaC).
+ *
+ * We key environment diffs/sync by `name`, so it is required in local config.
+ */
+export const zGtmEnvironmentDesired = zGtmEnvironment
+  .extend({
+    name: z.string().min(1)
+  })
+  .passthrough();
+
+/**
  * Minimal GTM API v2 Server-side Client representation (subset).
  *
  * IMPORTANT: This is a GTM "Client" resource (sGTM), not this repo's `GtmClient` wrapper.

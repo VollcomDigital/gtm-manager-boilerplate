@@ -96,6 +96,7 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
 
     const keys = [
       "builtInVariableTypes",
+      "environments",
       "folders",
       "clients",
       "transformations",
@@ -117,10 +118,26 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
     }
 
     out.policy = { protectedNames: mergedProtected };
+    if (Array.isArray(overlayPolicy.deleteAllowTypes)) {
+      const b = Array.isArray(basePolicy.deleteAllowTypes) ? (basePolicy.deleteAllowTypes as unknown[]) : [];
+      const o = overlayPolicy.deleteAllowTypes as unknown[];
+      (out.policy as Record<string, unknown>).deleteAllowTypes = mergeStringSet(
+        b.filter((v): v is string => typeof v === "string"),
+        o.filter((v): v is string => typeof v === "string")
+      );
+    }
+    if (Array.isArray(overlayPolicy.deleteDenyTypes)) {
+      const b = Array.isArray(basePolicy.deleteDenyTypes) ? (basePolicy.deleteDenyTypes as unknown[]) : [];
+      const o = overlayPolicy.deleteDenyTypes as unknown[];
+      (out.policy as Record<string, unknown>).deleteDenyTypes = mergeStringSet(
+        b.filter((v): v is string => typeof v === "string"),
+        o.filter((v): v is string => typeof v === "string")
+      );
+    }
   }
 
   // Lists: merge by name if provided
-  for (const listKey of ["folders", "clients", "transformations", "tags", "triggers", "variables", "templates", "zones"] as const) {
+  for (const listKey of ["environments", "folders", "clients", "transformations", "tags", "triggers", "variables", "templates", "zones"] as const) {
     const oList = overlay[listKey];
     if (!Array.isArray(oList)) continue;
 
@@ -195,8 +212,10 @@ function finalizeRepoConfig(partial: { defaults?: { workspaceName?: string }; co
       target: c.target,
       workspace: {
         workspaceName,
+        policy: (c.workspace as unknown as { policy?: unknown } | undefined)?.policy,
         builtInVariableTypes:
           (c.workspace as unknown as { builtInVariableTypes?: unknown[] } | undefined)?.builtInVariableTypes ?? [],
+        environments: (c.workspace as unknown as { environments?: unknown[] } | undefined)?.environments ?? [],
         folders: (c.workspace as unknown as { folders?: unknown[] } | undefined)?.folders ?? [],
         clients: (c.workspace as unknown as { clients?: unknown[] } | undefined)?.clients ?? [],
         transformations: (c.workspace as unknown as { transformations?: unknown[] } | undefined)?.transformations ?? [],

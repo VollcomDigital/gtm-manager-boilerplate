@@ -1,6 +1,7 @@
 import type { tagmanager_v2 } from "googleapis";
 
 export interface VersionSnapshot {
+  environments: tagmanager_v2.Schema$Environment[];
   builtInVariables: tagmanager_v2.Schema$BuiltInVariable[];
   folders: tagmanager_v2.Schema$Folder[];
   clients: tagmanager_v2.Schema$Client[];
@@ -18,6 +19,8 @@ export interface VersionSnapshot {
  */
 export function snapshotFromContainerVersion(version: tagmanager_v2.Schema$ContainerVersion): VersionSnapshot {
   return {
+    // Environments are container-level metadata, not embedded in container versions.
+    environments: [],
     builtInVariables: version.builtInVariable ?? [],
     folders: version.folder ?? [],
     clients: version.client ?? [],

@@ -81,6 +81,7 @@ export interface EntityDiff {
 }
 
 export interface WorkspaceDiff {
+  environments: EntityDiff;
   builtInVariables: EntityDiff;
   folders: EntityDiff;
   clients: EntityDiff;
@@ -93,6 +94,7 @@ export interface WorkspaceDiff {
 }
 
 export interface WorkspaceSnapshot {
+  environments: unknown[];
   builtInVariables: unknown[];
   folders: unknown[];
   clients: unknown[];
@@ -192,6 +194,7 @@ function diffStringSet(desired: string[], current: unknown[]): EntityDiff {
  */
 export function diffWorkspace(desired: WorkspaceDesiredState, current: WorkspaceSnapshot): WorkspaceDiff {
   return {
+    environments: diffByName(desired.environments, current.environments),
     builtInVariables: diffStringSet(desired.builtInVariableTypes, current.builtInVariables),
     folders: diffByName(desired.folders, current.folders),
     clients: diffByName(desired.clients, current.clients),

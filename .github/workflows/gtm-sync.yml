@@ -175,6 +175,7 @@ jobs:
             md += `Workspace: \`${sync.workspacePath ?? "?"}\`\\n\\n`;
             md += "| Entity | Created | Updated | Deleted | Skipped |\\n";
             md += "|---|---:|---:|---:|---:|\\n";
+            md += `| Environments | ${created(sync.environments)} | ${updated(sync.environments)} | ${deleted(sync.environments)} | ${skipped(sync.environments)} |\\n`;
             md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
             md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
             md += `| Built-in Variables | ${created(sync.builtInVariables)} | ${updated(sync.builtInVariables)} | ${deleted(sync.builtInVariables)} | ${skipped(sync.builtInVariables)} |\\n`;
@@ -313,6 +314,7 @@ jobs:
           md += `Workspace: \`${sync.workspacePath ?? "?"}\`\\n\\n`;
           md += "| Entity | Created | Updated | Deleted | Skipped |\\n";
           md += "|---|---:|---:|---:|---:|\\n";
+          md += `| Environments | ${created(sync.environments)} | ${updated(sync.environments)} | ${deleted(sync.environments)} | ${skipped(sync.environments)} |\\n`;
           md += `| Templates | ${created(sync.templates)} | ${updated(sync.templates)} | ${deleted(sync.templates)} | ${skipped(sync.templates)} |\\n`;
           md += `| Variables | ${created(sync.variables)} | ${updated(sync.variables)} | ${deleted(sync.variables)} | ${skipped(sync.variables)} |\\n`;
           md += `| Built-in Variables | ${created(sync.builtInVariables)} | ${updated(sync.builtInVariables)} | ${deleted(sync.builtInVariables)} | ${skipped(sync.builtInVariables)} |\\n`;

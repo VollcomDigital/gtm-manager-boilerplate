@@ -121,6 +121,7 @@ function makeEmptyPolicy(): WorkspaceDesiredState["policy"] {
   return {
     protectedNames: {
       builtInVariableTypes: [],
+      environments: [],
       folders: [],
       clients: [],
       transformations: [],
@@ -129,7 +130,9 @@ function makeEmptyPolicy(): WorkspaceDesiredState["policy"] {
       variables: [],
       templates: [],
       zones: []
-    }
+    },
+    deleteAllowTypes: [],
+    deleteDenyTypes: []
   };
 }
 
@@ -143,6 +146,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
     workspaceName: first.workspaceName,
     policy: first.policy ?? makeEmptyPolicy(),
     builtInVariableTypes: first.builtInVariableTypes ?? [],
+    environments: first.environments ?? [],
     folders: first.folders ?? [],
     clients: first.clients ?? [],
     transformations: first.transformations ?? [],
@@ -161,6 +165,7 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
       const b = out.policy.protectedNames;
       const o = p.policy.protectedNames;
       b.builtInVariableTypes = mergeStringSet(b.builtInVariableTypes, o.builtInVariableTypes);
+      b.environments = mergeStringSet(b.environments, o.environments);
       b.folders = mergeStringSet(b.folders, o.folders);
       b.clients = mergeStringSet(b.clients, o.clients);
       b.transformations = mergeStringSet(b.transformations, o.transformations);
@@ -169,8 +174,11 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
       b.variables = mergeStringSet(b.variables, o.variables);
       b.templates = mergeStringSet(b.templates, o.templates);
       b.zones = mergeStringSet(b.zones, o.zones);
+      out.policy.deleteAllowTypes = mergeStringSet(out.policy.deleteAllowTypes, p.policy.deleteAllowTypes);
+      out.policy.deleteDenyTypes = mergeStringSet(out.policy.deleteDenyTypes, p.policy.deleteDenyTypes);
     }
     if (p.builtInVariableTypes) out.builtInVariableTypes = mergeStringSet(out.builtInVariableTypes, p.builtInVariableTypes);
+    if (p.environments) out.environments = mergeByName(out.environments, p.environments);
     if (p.folders) out.folders = mergeByName(out.folders, p.folders);
     if (p.clients) out.clients = mergeByName(out.clients, p.clients);
     if (p.transformations) out.transformations = mergeByName(out.transformations, p.transformations);

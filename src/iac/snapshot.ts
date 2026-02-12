@@ -2,6 +2,7 @@ import type { tagmanager_v2 } from "googleapis";
 import type { GtmClient } from "../lib/gtm-client";
 
 export interface WorkspaceSnapshot {
+  environments: tagmanager_v2.Schema$Environment[];
   folders: tagmanager_v2.Schema$Folder[];
   builtInVariables: tagmanager_v2.Schema$BuiltInVariable[];
   clients: tagmanager_v2.Schema$Client[];
@@ -17,7 +18,10 @@ export interface WorkspaceSnapshot {
  * Fetches the current state of a GTM workspace (subset) needed for IaC diffing.
  */
 export async function fetchWorkspaceSnapshot(gtm: GtmClient, workspacePath: string): Promise<WorkspaceSnapshot> {
-  const [folders, builtInVariables, clients, transformations, tags, triggers, variables, templates, zones] = await Promise.all([
+  const containerPath = containerPathFromWorkspacePath(workspacePath);
+
+  const [environments, folders, builtInVariables, clients, transformations, tags, triggers, variables, templates, zones] = await Promise.all([
+    gtm.listEnvironments(containerPath),
     gtm.listFolders(workspacePath),
     gtm.listEnabledBuiltInVariables(workspacePath),
     listClientsSafe(gtm, workspacePath),
@@ -29,7 +33,15 @@ export async function fetchWorkspaceSnapshot(gtm: GtmClient, workspacePath: stri
     listZonesSafe(gtm, workspacePath)
   ]);
 
-  return { folders, builtInVariables, clients, transformations, tags, triggers, variables, templates, zones };
+  return { environments, folders, builtInVariables, clients, transformations, tags, triggers, variables, templates, zones };
+}
+
+function containerPathFromWorkspacePath(workspacePath: string): string {
+  const m = workspacePath.match(/^(accounts\/[^/]+\/containers\/[^/]+)\/workspaces\/[^/]+$/);
+  if (!m) {
+    throw new Error(`Invalid workspace path: "${workspacePath}"`);
+  }
+  return m[1]!;
 }
 
 function parseStatusFromErrorMessage(err: unknown): number | undefined {
