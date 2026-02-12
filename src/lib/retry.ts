@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { sleep } from "./sleep";
 
 export type OperationKind = "read" | "write";
@@ -38,6 +39,12 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
+function randomJitterFactor(): number {
+  // Use cryptographically strong randomness to avoid weak-PRNG security findings.
+  const thousandths = randomInt(0, 1001); // [0, 1000]
+  return 0.5 + thousandths / 1000;
+}
+
 /**
  * Applies exponential backoff (with optional jitter) around an async function.
  *
@@ -60,7 +67,7 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions):
       const exp = Math.pow(2, attempt);
       const rawDelay = options.baseDelayMs * exp;
       const capped = clamp(rawDelay, 0, options.maxDelayMs);
-      const jitterFactor = options.jitter ? 0.5 + Math.random() : 1; // [0.5, 1.5)
+      const jitterFactor = options.jitter ? randomJitterFactor() : 1;
       const delayMs = Math.floor(capped * jitterFactor);
 
       options.onRetry?.({ attempt, delayMs, err });
