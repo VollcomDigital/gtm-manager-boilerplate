@@ -210,7 +210,7 @@ export class GtmClient {
         return res.data;
       }, retryOptions);
     } catch (err: unknown) {
-      throw new Error(`${context} failed: ${this.formatError(err)}`);
+      throw new Error(`${context} failed: ${this.formatError(err)}`, { cause: err });
     }
   }
 

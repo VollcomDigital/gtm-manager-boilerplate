@@ -44,12 +44,44 @@ function containerPathFromWorkspacePath(workspacePath: string): string {
   return m[1]!;
 }
 
-function parseStatusFromErrorMessage(err: unknown): number | undefined {
-  const msg = err instanceof Error ? err.message : String(err);
+function toStatusCode(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined;
+}
+
+function parseStatusCodeFromMessage(msg: string): number | undefined {
   const m = msg.match(/status=(\d{3})/);
   if (!m) return undefined;
   const n = Number(m[1]);
-  return Number.isFinite(n) ? n : undefined;
+  return toStatusCode(n);
+}
+
+function parseStatusFromError(err: unknown): number | undefined {
+  if (err && typeof err === "object") {
+    const direct = err as {
+      status?: unknown;
+      response?: { status?: unknown };
+      cause?: unknown;
+    };
+    const directStatus = toStatusCode(direct.response?.status) ?? toStatusCode(direct.status);
+    if (directStatus !== undefined) {
+      return directStatus;
+    }
+
+    const cause = direct.cause;
+    if (cause && typeof cause === "object") {
+      const caused = cause as { status?: unknown; response?: { status?: unknown } };
+      const causeStatus = toStatusCode(caused.response?.status) ?? toStatusCode(caused.status);
+      if (causeStatus !== undefined) {
+        return causeStatus;
+      }
+    }
+  }
+
+  if (err instanceof Error) {
+    return parseStatusCodeFromMessage(err.message);
+  }
+
+  return parseStatusCodeFromMessage(String(err));
 }
 
 async function listZonesSafe(gtm: GtmClient, workspacePath: string): Promise<tagmanager_v2.Schema$Zone[]> {
@@ -58,7 +90,7 @@ async function listZonesSafe(gtm: GtmClient, workspacePath: string): Promise<tag
   } catch (err: unknown) {
     // Zones are commonly associated with GTM 360. For GTM free or non-eligible
     // containers, the API can respond with 403/404. Treat as "no zones".
-    const status = parseStatusFromErrorMessage(err);
+    const status = parseStatusFromError(err);
     if (status === 403 || status === 404) {
       return [];
     }
@@ -71,7 +103,7 @@ async function listClientsSafe(gtm: GtmClient, workspacePath: string): Promise<t
     return await gtm.listClients(workspacePath);
   } catch (err: unknown) {
     // Clients are a server-side GTM feature. For web containers, the API can respond with 403/404.
-    const status = parseStatusFromErrorMessage(err);
+    const status = parseStatusFromError(err);
     if (status === 403 || status === 404) {
       return [];
     }
@@ -84,7 +116,7 @@ async function listTransformationsSafe(gtm: GtmClient, workspacePath: string): P
     return await gtm.listTransformations(workspacePath);
   } catch (err: unknown) {
     // Transformations are a server-side GTM feature. For web containers, the API can respond with 403/404.
-    const status = parseStatusFromErrorMessage(err);
+    const status = parseStatusFromError(err);
     if (status === 403 || status === 404) {
       return [];
     }
