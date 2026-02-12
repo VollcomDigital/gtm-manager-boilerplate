@@ -48,13 +48,6 @@ function toStatusCode(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined;
 }
 
-function parseStatusCodeFromMessage(msg: string): number | undefined {
-  const m = msg.match(/status=(\d{3})/);
-  if (!m) return undefined;
-  const n = Number(m[1]);
-  return toStatusCode(n);
-}
-
 function parseStatusFromError(err: unknown): number | undefined {
   if (err && typeof err === "object") {
     const direct = err as {
@@ -76,12 +69,7 @@ function parseStatusFromError(err: unknown): number | undefined {
       }
     }
   }
-
-  if (err instanceof Error) {
-    return parseStatusCodeFromMessage(err.message);
-  }
-
-  return parseStatusCodeFromMessage(String(err));
+  return undefined;
 }
 
 async function listZonesSafe(gtm: GtmClient, workspacePath: string): Promise<tagmanager_v2.Schema$Zone[]> {
