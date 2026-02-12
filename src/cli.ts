@@ -24,6 +24,7 @@ interface ParsedCli {
 }
 
 const WORKSPACE_ROOT = path.resolve(process.cwd());
+const WORKSPACE_ROOT_WITH_SEP = WORKSPACE_ROOT.endsWith(path.sep) ? WORKSPACE_ROOT : `${WORKSPACE_ROOT}${path.sep}`;
 
 function parseCli(argv: string[]): ParsedCli {
   const [command, ...rest] = argv;
@@ -186,9 +187,13 @@ function parseLabelsFilter(value: string | undefined): Record<string, string> {
 }
 
 function resolvePathWithinWorkspace(inputPath: string, fieldName: string): string {
-  const resolved = path.resolve(WORKSPACE_ROOT, inputPath);
-  const relative = path.relative(WORKSPACE_ROOT, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  const candidate = inputPath.trim();
+  if (!candidate || candidate.includes("\0") || candidate.includes("\n") || candidate.includes("\r")) {
+    throw new Error(`Invalid ${fieldName} path: "${inputPath}"`);
+  }
+
+  const resolved = path.normalize(path.resolve(WORKSPACE_ROOT, candidate));
+  if (resolved !== WORKSPACE_ROOT && !resolved.startsWith(WORKSPACE_ROOT_WITH_SEP)) {
     throw new Error(`${fieldName} must be within workspace root: "${inputPath}"`);
   }
   return resolved;
