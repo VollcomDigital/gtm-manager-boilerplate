@@ -135,3 +135,163 @@ The hook set covers linting and formatting via Ruff (including import sorting an
 - Flesh out the manager/util modules with real GTM automation workflows (diff, sync, publish).
 - Add tests for the exporter and future automation logic; wire them into pre-commit or CI.
 - Extend the exporter to cover triggers, variables, or workspace snapshots if needed.
+
+---
+
+## TypeScript (Node.js) — GTM IaC scaffold (WIP)
+
+This repository also contains a **Node.js + TypeScript** scaffold for managing GTM via **GTM API v2** in an IaC style.
+
+### Install / build
+```bash
+npm install
+npm run typecheck
+npm run build
+```
+
+### Authentication (service account)
+1. In Google Cloud Console, create a **service account** and download a JSON key file.
+2. Enable the **Google Tag Manager API** for the project.
+3. In the GTM UI, add the **service account email** as a user on the relevant GTM Account/Container with at least:
+   - **Edit** permissions for workspace mutations
+   - **Publish** permissions if you want to publish container versions
+4. Configure env vars (see `.env.example`):
+   - `GTM_CREDENTIALS_PATH=/absolute/path/to/service_account.json`
+
+> Note: OAuth user flows are not wired up in the TypeScript scaffold yet; the current focus is CI-friendly service account auth.
+
+### CLI examples
+```bash
+# List GTM accounts accessible by the credential
+npm run cli -- list-accounts --json
+
+# List containers in an account
+npm run cli -- list-containers --account-id 1234567890 --json
+
+# Ensure a workspace exists (required for GTM API v2 mutations)
+npm run cli -- ensure-workspace --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --json
+
+# Create a container version from the workspace
+npm run cli -- create-version --account-id 1234567890 --container-id 51955729 --workspace-name Automation-Test --version-name "IaC Release" --notes "Automated publish" --json
+
+# Inspect live (currently published) version
+npm run cli -- live-version --account-id 1234567890 --container-id 51955729 --json
+```
+
+Optional:
+- Override scopes via `GTM_SCOPES` (comma/space-separated). This is useful for workspace deletion workflows, which typically require `https://www.googleapis.com/auth/tagmanager.delete.containers`.
+
+Rollback strategy:
+- Store previously published `containerVersion.path` values (the CI workflows upload them as artifacts when enabled).
+- To rollback, publish the prior version path:
+  - `npm run cli -- publish-version --version-path accounts/<acct>/containers/<cid>/versions/<vid> --json`
+
+### IaC snapshot / diff / sync (Phase 3 scaffolding)
+```bash
+# Export a workspace snapshot (tags/triggers/variables/templates) in a stable JSON shape
+npm run cli -- export-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --out ./workspace.snapshot.json
+
+# Diff a workspace against a desired-state JSON file
+npm run cli -- diff-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --config ./desired.workspace.json --json
+
+# Fail non-zero if drift exists (useful for CI)
+npm run cli -- diff-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --config ./desired.workspace.json --fail-on-drift
+
+# Apply desired state (safe order: templates → variables → triggers → tags)
+npm run cli -- sync-workspace --account-id 123 --container-id 456 --workspace-name "Automation-Test" --config ./desired.workspace.json --dry-run --json
+```
+
+Notes:
+- `sync-workspace` supports resolving tag trigger references by **name** using `firingTriggerNames` / `blockingTriggerNames` in the desired tag object. These are IaC-only fields and are not part of the GTM API schema.
+- `sync-workspace` and `diff-workspace` include **Zones** (GTM 360 feature) when present via GTM API v2 workspaces/zones.
+- Config files can be **JSON or YAML** (`.json`, `.yml`, `.yaml`).
+- You can pass **overlays** by providing a comma-separated list to `--config`, e.g. `--config ./base.yml,./prod.yml` (later files override earlier ones by entity name).
+- Custom templates can optionally be pinned with `__sha256` (SHA-256 of `templateData`). Use `npm run cli -- hash-config --config <file> --json` to compute hashes.
+
+### Multi-container repo config (Phase 3)
+For managing multiple GTM containers from a single repo config:
+
+```yaml
+# gtm.repo.yml
+schemaVersion: 1
+defaults:
+  workspaceName: iac
+
+containers:
+  - key: site_a
+    labels:
+      env: prod
+      region: eu
+    target:
+      accountId: "1234567890"
+      containerId: "51955729"   # numeric containerId (preferred)
+      # OR: containerPublicId: "GTM-XXXXXXX"
+    workspace:
+      workspaceName: iac
+      triggers:
+        - name: All Pages
+          type: PAGEVIEW
+      tags:
+        - name: "GA4 - Configuration"
+          type: gaawc
+          firingTriggerNames: ["All Pages"] # IaC-only convenience field
+          parameter:
+            - key: measurementId
+              type: TEMPLATE
+              value: "G-XXXXXXXXXX"
+```
+
+Commands:
+```bash
+# Diff all selected containers
+npm run cli -- diff-repo --config ./gtm.repo.yml --labels env=prod --fail-on-drift --json
+
+# Sync all selected containers (dry-run)
+npm run cli -- sync-repo --config ./gtm.repo.yml --container-keys site_a,site_b --dry-run --json
+```
+
+### GitHub Actions: optional GTM diff on PRs
+This repo ships a `gtm-diff` workflow that is **skipped by default** unless you configure secrets/vars:
+- Secrets:
+  - `GTM_SERVICE_ACCOUNT_JSON_B64` (base64-encoded service-account JSON; fallback option)
+  - OR (preferred) `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT_EMAIL` for GitHub OIDC
+  - `GTM_ACCOUNT_ID`
+  - `GTM_CONTAINER_ID`
+- Vars:
+  - `GTM_WORKSPACE_NAME` (default: `Automation-Test`)
+  - `GTM_DESIRED_CONFIG_PATH` (default: `desired.workspace.json`)
+
+When configured, PRs will run `diff-workspace --fail-on-drift` and upload `gtm.diff.json` as an artifact.
+
+### GitHub Actions: optional GTM sync + publish
+This repo also ships a `gtm-sync` workflow:
+- `workflow_dispatch` supports:
+  - running `sync-workspace` (optionally `--delete-missing`)
+  - optionally creating + publishing a container version
+- `push` to `main` is supported but **opt-in** via repo variable `GTM_SYNC_ON_PUSH=true`.
+
+Required secrets:
+- `GTM_SERVICE_ACCOUNT_JSON_B64`
+- `GTM_ACCOUNT_ID`
+- `GTM_CONTAINER_ID`
+
+OIDC alternative (preferred):
+- Secrets:
+  - `GCP_WORKLOAD_IDENTITY_PROVIDER`
+  - `GCP_SERVICE_ACCOUNT_EMAIL`
+- If these are set, the workflows will authenticate to GCP without storing a JSON key.
+
+Required vars for push-based sync:
+- `GTM_WORKSPACE_NAME`
+- `GTM_DESIRED_CONFIG_PATH`
+
+### Releases (optional)
+There is a manual `release` workflow (`workflow_dispatch`) powered by **semantic-release**. It tags releases and updates `CHANGELOG.md` based on Conventional Commits.
+
+### Example automation script
+`src/index.ts` demonstrates:
+- authenticating
+- resolving a container
+- creating a workspace `Automation-Test`
+- creating an "All Pages" trigger
+- adding a basic GA4 Configuration tag into that workspace

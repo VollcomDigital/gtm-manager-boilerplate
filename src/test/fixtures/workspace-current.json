@@ -1,0 +1,54 @@
+{
+  "environments": [
+    {
+      "name": "Staging",
+      "type": "USER",
+      "enableDebug": false,
+      "path": "accounts/1/containers/10/environments/1"
+    },
+    {
+      "name": "Legacy",
+      "type": "USER",
+      "path": "accounts/1/containers/10/environments/2"
+    }
+  ],
+  "builtInVariables": [
+    {
+      "type": "PAGE_URL"
+    }
+  ],
+  "folders": [
+    {
+      "name": "Core Folder"
+    }
+  ],
+  "clients": [],
+  "transformations": [
+    {
+      "name": "PII Redact",
+      "type": "allowlist",
+      "notes": "legacy"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Main Tag",
+      "type": "html",
+      "notes": "old-note"
+    }
+  ],
+  "triggers": [
+    {
+      "name": "All Pages",
+      "type": "PAGEVIEW"
+    }
+  ],
+  "variables": [],
+  "templates": [
+    {
+      "name": "Template A",
+      "templateData": "const x = 0;"
+    }
+  ],
+  "zones": []
+}

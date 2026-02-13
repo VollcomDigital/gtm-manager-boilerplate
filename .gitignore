@@ -6,6 +6,15 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
+# Node artifacts
+node_modules/
+dist/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 # Virtual environments
 .venv/
 .env

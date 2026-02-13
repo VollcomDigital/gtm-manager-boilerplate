@@ -1,0 +1,59 @@
+{
+  "workspaceName": "iac",
+  "builtInVariableTypes": ["PAGE_URL", "CLICK_TEXT"],
+  "environments": [
+    {
+      "name": "Staging",
+      "type": "USER",
+      "enableDebug": true
+    }
+  ],
+  "folders": [
+    {
+      "name": "Core Folder"
+    }
+  ],
+  "clients": [
+    {
+      "name": "HTTP Client",
+      "type": "http"
+    }
+  ],
+  "transformations": [
+    {
+      "name": "PII Redact",
+      "type": "allowlist",
+      "notes": "redact pii"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Main Tag",
+      "type": "html",
+      "notes": "desired-note"
+    }
+  ],
+  "triggers": [
+    {
+      "name": "All Pages",
+      "type": "PAGEVIEW"
+    }
+  ],
+  "variables": [
+    {
+      "name": "Env Var",
+      "type": "v"
+    }
+  ],
+  "templates": [
+    {
+      "name": "Template A",
+      "templateData": "const x = 1;"
+    }
+  ],
+  "zones": [
+    {
+      "name": "Main Zone"
+    }
+  ]
+}

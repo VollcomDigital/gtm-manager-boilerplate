@@ -41,34 +41,9 @@ def load_salesline_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]
     Returns a dict keyed by salesline slug. Supports optional grouping keys
     (e.g., "central:") which will be flattened automatically.
     """
-    mapping: Dict[str, Any] | None = None
-
-    path_to_load: pathlib.Path | None = None
-    if config_path:
-        path_to_load = pathlib.Path(config_path)
-    else:
-        default_path = pathlib.Path(DEFAULT_SALESLINE_CONFIG)
-        if default_path.exists():
-            path_to_load = default_path
-
-    if path_to_load and path_to_load.exists():
-        with open(path_to_load, "r", encoding="utf-8") as config_file:
-            raw_data = yaml.safe_load(config_file) or {}
-
-        if not isinstance(raw_data, dict):
-            raise ValueError("Salesline config must be a mapping of saleslines.")
-
-        mapping = raw_data.get("saleslines", raw_data)
-
+    mapping = _load_salesline_mapping_from_file(config_path)
     if mapping is None:
-        env_payload = os.getenv(SALESLINE_ENV_VAR)
-        if env_payload:
-            try:
-                mapping = json.loads(env_payload)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Failed to parse {SALESLINE_ENV_VAR} environment variable as JSON.",
-                ) from exc
+        mapping = _load_salesline_mapping_from_env()
 
     if mapping is None:
         source_hint = config_path or DEFAULT_SALESLINE_CONFIG
@@ -82,6 +57,46 @@ def load_salesline_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]
         raise ValueError("Salesline entries must be provided as a mapping.")
 
     return _normalize_salesline_mapping(mapping)
+
+
+def _resolve_salesline_config_path(config_path: str | None) -> pathlib.Path | None:
+    if config_path:
+        return pathlib.Path(config_path)
+
+    default_path = pathlib.Path(DEFAULT_SALESLINE_CONFIG)
+    if default_path.exists():
+        return default_path
+
+    return None
+
+
+def _load_salesline_mapping_from_file(config_path: str | None) -> Dict[str, Any] | None:
+    path_to_load = _resolve_salesline_config_path(config_path)
+    if not path_to_load or not path_to_load.exists():
+        return None
+
+    with open(path_to_load, "r", encoding="utf-8") as config_file:
+        raw_data = yaml.safe_load(config_file) or {}
+
+    if not isinstance(raw_data, dict):
+        raise ValueError("Salesline config must be a mapping of saleslines.")
+
+    return raw_data.get("saleslines", raw_data)
+
+
+def _load_salesline_mapping_from_env() -> Dict[str, Any] | None:
+    env_payload = os.getenv(SALESLINE_ENV_VAR)
+    if not env_payload:
+        return None
+
+    try:
+        parsed = json.loads(env_payload)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Failed to parse {SALESLINE_ENV_VAR} environment variable as JSON.",
+        ) from exc
+
+    return parsed
 
 
 def _normalize_salesline_mapping(mapping: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -193,23 +208,50 @@ def extract_parameters(tag: Dict[str, Any]) -> List[Tuple[str, Any]]:
 
     for param in params:
         key = param.get("key", "")
-        value = flatten_parameter_value(param)
-        pairs.append((key, value))
-
-        if key == "eventParameters" and isinstance(value, list):
-            for item in param.get("list", []):
-                mapped: Dict[str, Any] = {}
-                for entry in item.get("map", []):
-                    sub_key = entry.get("key")
-                    sub_value = entry.get("value")
-                    if sub_key:
-                        mapped[sub_key] = sub_value
-                if mapped:
-                    pairs.append(
-                        (f"eventParameters.{mapped.get('name', '')}", mapped.get("value", "")),
-                    )
+        pairs.append((key, flatten_parameter_value(param)))
+        pairs.extend(_extract_event_parameter_pairs(param, key))
 
     return pairs
+
+
+def _extract_event_parameter_pairs(
+    param: Dict[str, Any],
+    key: str,
+) -> List[Tuple[str, Any]]:
+    if key != "eventParameters":
+        return []
+
+    raw_items = param.get("list", [])
+    if not isinstance(raw_items, list):
+        return []
+
+    output: List[Tuple[str, Any]] = []
+    for item in raw_items:
+        mapped = _extract_named_value_from_map(item)
+        if mapped:
+            output.append((f"eventParameters.{mapped.get('name', '')}", mapped.get("value", "")))
+
+    return output
+
+
+def _extract_named_value_from_map(item: Any) -> Dict[str, Any]:
+    if not isinstance(item, dict):
+        return {}
+
+    raw_map = item.get("map", [])
+    if not isinstance(raw_map, list):
+        return {}
+
+    mapped: Dict[str, Any] = {}
+    for entry in raw_map:
+        if not isinstance(entry, dict):
+            continue
+
+        sub_key = entry.get("key")
+        if sub_key:
+            mapped[sub_key] = entry.get("value")
+
+    return mapped
 
 
 def normalize_value_for_csv(value: Any) -> str:

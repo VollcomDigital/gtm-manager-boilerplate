@@ -1,0 +1,104 @@
+const DYNAMIC_KEYS = new Set<string>([
+  // Common GTM server-managed fields
+  "accountId",
+  "containerId",
+  "workspaceId",
+  "path",
+  "tagManagerUrl",
+  "fingerprint",
+
+  // Entity IDs (IaC typically matches by name)
+  "folderId",
+  "tagId",
+  "triggerId",
+  "variableId",
+  "clientId",
+  "templateId",
+  "transformationId",
+  "zoneId"
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isRecordArray(values: unknown[]): values is Array<Record<string, unknown>> {
+  return values.every((v) => isRecord(v));
+}
+
+/**
+ * Removes server-managed / environment-specific keys from a GTM API object.
+ *
+ * This is useful for producing stable JSON snapshots and for diffing desired
+ * state (IaC) against live API responses.
+ */
+export function stripDynamicFieldsDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripDynamicFieldsDeep);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    // `__*` keys are reserved for IaC metadata and must not be sent to the API.
+    if (DYNAMIC_KEYS.has(k) || k.startsWith("__")) continue;
+    out[k] = stripDynamicFieldsDeep(v);
+  }
+  return out;
+}
+
+/**
+ * Canonicalizes a value into a deterministic representation for stable diffs.
+ *
+ * - object keys are sorted
+ * - arrays of strings are sorted
+ * - arrays of objects are sorted by `name` or `key` when present
+ */
+export function canonicalizeDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const stringItems = value.filter((v): v is string => typeof v === "string");
+    if (stringItems.length === value.length) {
+      return [...stringItems].sort((a, b) => a.localeCompare(b));
+    }
+
+    const canonicalItems = value.map(canonicalizeDeep);
+
+    // Sort arrays of objects by name/key where possible.
+    if (isRecordArray(canonicalItems)) {
+      const items = canonicalItems;
+      const hasName = items.every((v) => typeof v.name === "string");
+      const hasKey = items.every((v) => typeof v.key === "string");
+      if (hasName) {
+        return [...items].sort((a, b) => String(a.name).toLowerCase().localeCompare(String(b.name).toLowerCase()));
+      }
+      if (hasKey) {
+        return [...items].sort((a, b) => String(a.key).toLowerCase().localeCompare(String(b.key).toLowerCase()));
+      }
+    }
+
+    return canonicalItems;
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const out: Record<string, unknown> = {};
+  const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
+  for (const k of keys) {
+    out[k] = canonicalizeDeep(value[k]);
+  }
+  return out;
+}
+
+/**
+ * Normalizes an entity (desired/current) for diffing/comparison:
+ * - strips dynamic/server-managed fields
+ * - canonicalizes keys + common arrays to avoid order-only drift
+ */
+export function normalizeForDiff(value: unknown): unknown {
+  return canonicalizeDeep(stripDynamicFieldsDeep(value));
+}
+
