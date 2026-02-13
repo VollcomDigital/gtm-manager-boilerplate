@@ -36,7 +36,7 @@ def safe_get(data: Dict[str, Any], key: str, default=None):
     return data.get(key, default) if isinstance(data, dict) else default
 
 
-def load_salesline_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]:
+def load_target_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]:
     """
     Load the target-key -> container mapping from YAML or environment variables.
 
