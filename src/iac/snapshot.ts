@@ -14,6 +14,8 @@ export interface WorkspaceSnapshot {
   zones: tagmanager_v2.Schema$Zone[];
 }
 
+const WORKSPACE_PATH_RE = /^(accounts\/[^/]+\/containers\/[^/]+)\/workspaces\/[^/]+$/;
+
 /**
  * Fetches the current state of a GTM workspace (subset) needed for IaC diffing.
  */
@@ -37,7 +39,7 @@ export async function fetchWorkspaceSnapshot(gtm: GtmClient, workspacePath: stri
 }
 
 function containerPathFromWorkspacePath(workspacePath: string): string {
-  const m = workspacePath.match(/^(accounts\/[^/]+\/containers\/[^/]+)\/workspaces\/[^/]+$/);
+  const m = WORKSPACE_PATH_RE.exec(workspacePath);
   if (!m) {
     throw new Error(`Invalid workspace path: "${workspacePath}"`);
   }

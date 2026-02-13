@@ -31,10 +31,14 @@ function parseCli(argv: string[]): ParsedCli {
   const flags: Record<string, FlagValue> = {};
   const positionals: string[] = [];
 
-  for (let i = 0; i < rest.length; i += 1) {
+  let i = 0;
+  while (i < rest.length) {
     const token = rest[i]!;
+    let consumed = 1;
+
     if (!token.startsWith("--")) {
       positionals.push(token);
+      i += consumed;
       continue;
     }
 
@@ -44,6 +48,7 @@ function parseCli(argv: string[]): ParsedCli {
       const key = withoutPrefix.slice(0, eqIdx);
       const value = withoutPrefix.slice(eqIdx + 1);
       flags[key] = value;
+      i += consumed;
       continue;
     }
 
@@ -51,10 +56,12 @@ function parseCli(argv: string[]): ParsedCli {
     const next = rest[i + 1];
     if (next && !next.startsWith("--")) {
       flags[key] = next;
-      i += 1;
-      continue;
+      consumed = 2;
+    } else {
+      flags[key] = true;
     }
-    flags[key] = true;
+
+    i += consumed;
   }
 
   const parsed: ParsedCli = { flags, positionals };

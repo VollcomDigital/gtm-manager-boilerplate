@@ -25,12 +25,37 @@ function lower(s: string): string {
   return s.trim().toLowerCase();
 }
 
+const WORKSPACE_PATH_RE = /^(accounts\/[^/]+\/containers\/[^/]+)\/workspaces\/[^/]+$/;
+
 function containerPathFromWorkspacePath(workspacePath: string): string {
-  const m = workspacePath.match(/^(accounts\/[^/]+\/containers\/[^/]+)\/workspaces\/[^/]+$/);
+  const m = WORKSPACE_PATH_RE.exec(workspacePath);
   if (!m) {
     throw new Error(`Invalid workspace path: "${workspacePath}"`);
   }
   return m[1]!;
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function displayEntityName(nameValue: unknown): string {
+  return asNonEmptyString(nameValue) ?? "?";
+}
+
+function valueToStableString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }
 
 function ensureUniqueNames(entities: Array<{ name: string }>, entityType: string): void {
@@ -76,13 +101,13 @@ function tagWithResolvedTriggers(
   const firingIds = out.firingTriggerId;
   const firingNames = out.firingTriggerNames;
   if (firingIds !== undefined && firingNames !== undefined) {
-    throw new Error(`Tag "${String(out.name ?? "?")}" cannot specify both firingTriggerId and firingTriggerNames.`);
+    throw new Error(`Tag "${displayEntityName(out.name)}" cannot specify both firingTriggerId and firingTriggerNames.`);
   }
 
   const blockingIds = out.blockingTriggerId;
   const blockingNames = out.blockingTriggerNames;
   if (blockingIds !== undefined && blockingNames !== undefined) {
-    throw new Error(`Tag "${String(out.name ?? "?")}" cannot specify both blockingTriggerId and blockingTriggerNames.`);
+    throw new Error(`Tag "${displayEntityName(out.name)}" cannot specify both blockingTriggerId and blockingTriggerNames.`);
   }
 
   if (Array.isArray(firingNames)) {
@@ -91,7 +116,7 @@ function tagWithResolvedTriggers(
       if (typeof n !== "string" || !n.trim()) continue;
       const id = triggerNameToId.get(lower(n));
       if (!id) {
-        throw new Error(`Tag "${String(out.name ?? "?")}" references missing trigger by name: "${n}"`);
+        throw new Error(`Tag "${displayEntityName(out.name)}" references missing trigger by name: "${n}"`);
       }
       resolved.push(id);
     }
@@ -105,7 +130,7 @@ function tagWithResolvedTriggers(
       if (typeof n !== "string" || !n.trim()) continue;
       const id = triggerNameToId.get(lower(n));
       if (!id) {
-        throw new Error(`Tag "${String(out.name ?? "?")}" references missing blocking trigger by name: "${n}"`);
+        throw new Error(`Tag "${displayEntityName(out.name)}" references missing blocking trigger by name: "${n}"`);
       }
       resolved.push(id);
     }
@@ -131,7 +156,7 @@ function zoneWithResolvedCustomEvalTriggers(
   const customIds = boundary.customEvaluationTriggerId;
   const customNames = boundary.customEvaluationTriggerNames;
   if (customIds !== undefined && customNames !== undefined) {
-    throw new Error(`Zone "${String(out.name ?? "?")}" cannot specify both boundary.customEvaluationTriggerId and boundary.customEvaluationTriggerNames.`);
+    throw new Error(`Zone "${displayEntityName(out.name)}" cannot specify both boundary.customEvaluationTriggerId and boundary.customEvaluationTriggerNames.`);
   }
 
   if (Array.isArray(customNames)) {
@@ -140,7 +165,7 @@ function zoneWithResolvedCustomEvalTriggers(
       if (typeof n !== "string" || !n.trim()) continue;
       const id = triggerNameToId.get(lower(n));
       if (!id) {
-        throw new Error(`Zone "${String(out.name ?? "?")}" references missing custom evaluation trigger by name: "${n}"`);
+        throw new Error(`Zone "${displayEntityName(out.name)}" references missing custom evaluation trigger by name: "${n}"`);
       }
       resolved.push(id);
     }
@@ -359,7 +384,7 @@ export async function syncWorkspace(
     if (isRecord(dt)) {
       const expected = dt.__sha256;
       if (typeof expected === "string" && expected.trim().length) {
-        const actual = sha256HexFromString(String(dt.templateData ?? ""));
+        const actual = sha256HexFromString(valueToStableString(dt.templateData));
         if (actual !== expected.trim().toLowerCase()) {
           throw new Error(`Template "${dt.name}" __sha256 mismatch (expected=${expected}, actual=${actual}).`);
         }
@@ -563,8 +588,8 @@ export async function syncWorkspace(
     }
   }
 
-  toEnable.sort();
-  toDisable.sort();
+  toEnable.sort((a, b) => a.localeCompare(b));
+  toDisable.sort((a, b) => a.localeCompare(b));
 
   if (toEnable.length) {
     res.builtInVariables.created.push(...toEnable);
@@ -896,7 +921,7 @@ export async function syncWorkspace(
         );
       }
     }
-    res.warnings.sort();
+    res.warnings.sort((a, b) => a.localeCompare(b));
   }
 
   for (const rawDesiredTag of desired.tags) {
@@ -1094,13 +1119,13 @@ export async function syncWorkspace(
     res.tags,
     res.folders
   ]) {
-    summary.created.sort();
-    summary.updated.sort();
-    summary.deleted.sort();
-    summary.skipped.sort();
+    summary.created.sort((a, b) => a.localeCompare(b));
+    summary.updated.sort((a, b) => a.localeCompare(b));
+    summary.deleted.sort((a, b) => a.localeCompare(b));
+    summary.skipped.sort((a, b) => a.localeCompare(b));
   }
 
-  res.warnings.sort();
+  res.warnings.sort((a, b) => a.localeCompare(b));
 
   return res;
 }

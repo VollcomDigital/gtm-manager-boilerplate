@@ -141,9 +141,9 @@ function diffByName(desired: Array<{ name: string }>, current: unknown[]): Entit
     }
   }
 
-  create.sort();
-  update.sort();
-  del.sort();
+  create.sort((a, b) => a.localeCompare(b));
+  update.sort((a, b) => a.localeCompare(b));
+  del.sort((a, b) => a.localeCompare(b));
 
   return { create, update, delete: del };
 }
@@ -180,8 +180,8 @@ function diffStringSet(desired: string[], current: unknown[]): EntityDiff {
     if (!desiredByLower.has(k)) del.push(v);
   }
 
-  create.sort();
-  del.sort();
+  create.sort((a, b) => a.localeCompare(b));
+  del.sort((a, b) => a.localeCompare(b));
   return { create, update, delete: del };
 }
 

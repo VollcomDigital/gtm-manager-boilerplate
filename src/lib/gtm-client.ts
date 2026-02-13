@@ -114,7 +114,7 @@ export class GtmClient {
 
   private normalizePath(p: string): string {
     let end = p.length;
-    while (end > 0 && p.charCodeAt(end - 1) === 47) {
+    while (end > 0 && p.codePointAt(end - 1) === 47) {
       end -= 1;
     }
     if (end === p.length) {
@@ -174,10 +174,21 @@ export class GtmClient {
             .join(", ")}]`
         : "";
 
-    const statusSummary =
-      status !== undefined
-        ? `status=${String(status)}${typeof statusText === "string" ? ` ${statusText}` : ""}`
-        : "status=unknown";
+    let statusSummary = "status=unknown";
+    if (status !== undefined) {
+      let statusValue: string;
+      if (typeof status === "string" || typeof status === "number") {
+        statusValue = String(status);
+      } else {
+        try {
+          statusValue = JSON.stringify(status);
+        } catch {
+          statusValue = String(status);
+        }
+      }
+      const suffix = typeof statusText === "string" ? ` ${statusText}` : "";
+      statusSummary = `status=${statusValue}${suffix}`;
+    }
 
     return `${statusSummary}; message=${apiMessage ?? message}${apiErrorsSummary}`;
   }
