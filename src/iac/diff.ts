@@ -195,31 +195,59 @@ function diffByName(desired: Array<{ name: string }>, current: unknown[]): Entit
   return { create, update, delete: del };
 }
 
-function diffStringSet(desired: string[], current: unknown[]): EntityDiff {
-  const desiredByLower = new Map<string, string>();
-  for (const v of desired) {
-    const key = v.trim().toLowerCase();
-    if (key) desiredByLower.set(key, v);
+function asCurrentStringSetEntry(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
   }
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return undefined;
+  }
+  return value.type;
+}
 
-  const currentByLower = new Map<string, string>();
-  for (const v of current) {
-    const raw = typeof v === "string" ? v : isRecord(v) && typeof v.type === "string" ? v.type : undefined;
-    if (!raw) continue;
+function buildDesiredStringSetIndex(values: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const value of values) {
+    const key = value.trim().toLowerCase();
+    if (key) {
+      out.set(key, value);
+    }
+  }
+  return out;
+}
+
+function buildCurrentStringSetIndex(values: unknown[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const value of values) {
+    const raw = asCurrentStringSetEntry(value);
+    if (!raw) {
+      continue;
+    }
     const key = raw.trim().toLowerCase();
-    if (key) currentByLower.set(key, raw);
+    if (key) {
+      out.set(key, raw);
+    }
   }
+  return out;
+}
 
-  const create: string[] = [];
+function collectMissingValues(source: Map<string, string>, target: Map<string, string>): string[] {
+  const out: string[] = [];
+  for (const [key, value] of source.entries()) {
+    if (!target.has(key)) {
+      out.push(value);
+    }
+  }
+  return out;
+}
+
+function diffStringSet(desired: string[], current: unknown[]): EntityDiff {
+  const desiredByLower = buildDesiredStringSetIndex(desired);
+  const currentByLower = buildCurrentStringSetIndex(current);
+
+  const create = collectMissingValues(desiredByLower, currentByLower);
   const update: string[] = [];
-  const del: string[] = [];
-
-  for (const [k, v] of desiredByLower.entries()) {
-    if (!currentByLower.has(k)) create.push(v);
-  }
-  for (const [k, v] of currentByLower.entries()) {
-    if (!desiredByLower.has(k)) del.push(v);
-  }
+  const del = collectMissingValues(currentByLower, desiredByLower);
 
   create.sort((a, b) => a.localeCompare(b));
   del.sort((a, b) => a.localeCompare(b));

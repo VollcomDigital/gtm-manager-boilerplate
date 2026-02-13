@@ -1211,6 +1211,10 @@ async function hashConfig(configPath: string, asJson: boolean): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  await mainInternal();
+}
+
+async function mainInternal(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.command || parsed.flags.help === true) {
     printHelp();
@@ -1859,7 +1863,7 @@ async function main(): Promise<void> {
   }
 }
 
-void (async () => {
+async function runCli(): Promise<void> {
   try {
     await main();
   } catch (err: unknown) {
@@ -1867,5 +1871,7 @@ void (async () => {
     console.error(`Fatal: ${msg}`);
     process.exitCode = 1;
   }
-})();
+}
+
+void runCli();
 

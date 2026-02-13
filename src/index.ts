@@ -122,7 +122,7 @@ async function main(): Promise<void> {
   );
 }
 
-void (async () => {
+async function runExample(): Promise<void> {
   try {
     await main();
   } catch (err: unknown) {
@@ -130,5 +130,7 @@ void (async () => {
     console.error(`Fatal: ${msg}`);
     process.exitCode = 1;
   }
-})();
+}
+
+void runExample();
 

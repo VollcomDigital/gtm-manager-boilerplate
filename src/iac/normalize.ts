@@ -22,6 +22,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isRecordArray(values: unknown[]): values is Array<Record<string, unknown>> {
+  return values.every((v) => isRecord(v));
+}
+
 /**
  * Removes server-managed / environment-specific keys from a GTM API object.
  *
@@ -62,8 +66,8 @@ export function canonicalizeDeep(value: unknown): unknown {
     const canonicalItems = value.map(canonicalizeDeep);
 
     // Sort arrays of objects by name/key where possible.
-    if (canonicalItems.every((v) => isRecord(v))) {
-      const items = canonicalItems as Array<Record<string, unknown>>;
+    if (isRecordArray(canonicalItems)) {
+      const items = canonicalItems;
       const hasName = items.every((v) => typeof v.name === "string");
       const hasKey = items.every((v) => typeof v.key === "string");
       if (hasName) {

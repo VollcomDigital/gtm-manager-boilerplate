@@ -236,6 +236,15 @@ export async function syncWorkspace(
   desired: WorkspaceDesiredState,
   options: SyncWorkspaceOptions
 ): Promise<SyncWorkspaceResult> {
+  return await syncWorkspaceInternal(gtm, workspacePath, desired, options);
+}
+
+async function syncWorkspaceInternal(
+  gtm: GtmClient,
+  workspacePath: string,
+  desired: WorkspaceDesiredState,
+  options: SyncWorkspaceOptions
+): Promise<SyncWorkspaceResult> {
   ensureUniqueNames(desired.environments, "environment");
   ensureUniqueNames(desired.templates, "template");
   ensureUniqueNames(desired.variables, "variable");
@@ -426,9 +435,13 @@ export async function syncWorkspace(
       if (existing.path) {
         await gtm.updateTemplate(existing.path, body, fingerprint ? { fingerprint } : {});
       } else {
+        const templateId = existing.templateId;
+        if (!templateId) {
+          throw new Error(`Cannot update template "${dt.name}" (missing templateId).`);
+        }
         await gtm.updateTemplateById(
           workspacePath,
-          existing.templateId!,
+          templateId,
           body,
           fingerprint ? { fingerprint } : {}
         );
@@ -1024,13 +1037,9 @@ export async function syncWorkspace(
         const created = await gtm.createFolder(workspacePath, stripDynamicFieldsDeep(df) as GtmFolder);
         folderId = created.folderId ?? undefined;
       }
-    } else if (!options.updateExisting) {
-      res.folders.skipped.push(df.name);
-    } else {
+    } else if (options.updateExisting) {
       const needsUpdate = shouldUpdate(existing, df);
-      if (!needsUpdate) {
-        res.folders.skipped.push(df.name);
-      } else {
+      if (needsUpdate) {
         res.folders.updated.push(df.name);
         if (!options.dryRun) {
           if (!existing.folderId) throw new Error(`Cannot update folder "${df.name}" (missing folderId).`);
@@ -1045,7 +1054,11 @@ export async function syncWorkspace(
           );
           folderId = updated.folderId ?? existing.folderId;
         }
+      } else {
+        res.folders.skipped.push(df.name);
       }
+    } else {
+      res.folders.skipped.push(df.name);
     }
 
     // Apply membership mapping by names, if provided.

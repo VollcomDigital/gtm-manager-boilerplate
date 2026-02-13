@@ -194,6 +194,13 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
   return out;
 }
 
+function mergeOptionalRecords<T extends Record<string, unknown>>(base: T | undefined, overlay: T | undefined): T | undefined {
+  if (base && overlay) {
+    return { ...base, ...overlay };
+  }
+  return overlay ?? base;
+}
+
 function mergeContainer(base: RepoContainerPartial, overlay: RepoContainerPartial): RepoContainerPartial {
   const merged: RepoContainerPartial = { key: base.key };
 
@@ -201,19 +208,15 @@ function mergeContainer(base: RepoContainerPartial, overlay: RepoContainerPartia
   merged.description = overlay.description ?? base.description;
 
   // labels: merge map
-  if (base.labels || overlay.labels) {
-    merged.labels = {
-      ...(base.labels ?? {}),
-      ...(overlay.labels ?? {})
-    };
+  const mergedLabels = mergeOptionalRecords(base.labels, overlay.labels);
+  if (mergedLabels) {
+    merged.labels = mergedLabels;
   }
 
   // target: shallow merge (overlay wins)
-  if (base.target || overlay.target) {
-    merged.target = {
-      ...(base.target ?? {}),
-      ...(overlay.target ?? {})
-    };
+  const mergedTarget = mergeOptionalRecords(base.target, overlay.target);
+  if (mergedTarget) {
+    merged.target = mergedTarget;
   }
 
   // workspace: merge by entity name
