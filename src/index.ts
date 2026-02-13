@@ -122,15 +122,11 @@ async function main(): Promise<void> {
   );
 }
 
-async function runExample(): Promise<void> {
-  try {
-    await main();
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`Fatal: ${msg}`);
-    process.exitCode = 1;
-  }
-}
+process.on("unhandledRejection", (err: unknown) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`Fatal: ${msg}`);
+  process.exitCode = 1;
+});
 
-void runExample();
+void main();
 

@@ -1215,6 +1215,10 @@ async function main(): Promise<void> {
 }
 
 async function mainInternal(): Promise<void> {
+  await runCommandLine();
+}
+
+async function runCommandLine(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.command || parsed.flags.help === true) {
     printHelp();
@@ -1863,15 +1867,11 @@ async function mainInternal(): Promise<void> {
   }
 }
 
-async function runCli(): Promise<void> {
-  try {
-    await main();
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`Fatal: ${msg}`);
-    process.exitCode = 1;
-  }
-}
+process.on("unhandledRejection", (err: unknown) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`Fatal: ${msg}`);
+  process.exitCode = 1;
+});
 
-void runCli();
+void main();
 
