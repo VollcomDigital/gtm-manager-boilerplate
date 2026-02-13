@@ -1,1 +1,1 @@
-"""MMS GTM Manager source package."""
+"""GTM Manager boilerplate source package."""

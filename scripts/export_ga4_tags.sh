@@ -17,14 +17,15 @@ if [[ "${GTM_AUTH_METHOD:-user}" != "adc" ]]; then
   CMD+=(--credentials "${GTM_CREDENTIALS_PATH:?Set GTM_CREDENTIALS_PATH for service/user auth}")
 fi
 
-if [[ -n "${GTM_SALESLINE:-}" ]]; then
-  CMD+=(--salesline "${GTM_SALESLINE}")
+TARGET_KEY="${GTM_TARGET_KEY:-${GTM_SALESLINE:-}}"
+if [[ -n "${TARGET_KEY}" ]]; then
+  CMD+=(--target-key "${TARGET_KEY}")
   if [[ -n "${GTM_CONFIG_PATH:-}" ]]; then
     CMD+=(--config-path "${GTM_CONFIG_PATH}")
   fi
 else
-  CMD+=(--account-id "${GTM_ACCOUNT_ID:?Set GTM_ACCOUNT_ID or GTM_SALESLINE}")
-  CMD+=(--container-id "${GTM_CONTAINER_ID:?Set GTM_CONTAINER_ID or GTM_SALESLINE}")
+  CMD+=(--account-id "${GTM_ACCOUNT_ID:?Set GTM_ACCOUNT_ID or GTM_TARGET_KEY}")
+  CMD+=(--container-id "${GTM_CONTAINER_ID:?Set GTM_CONTAINER_ID or GTM_TARGET_KEY}")
 fi
 
 exec "${CMD[@]}"

@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "mms-gtm-manager"
+name = "gtm-manager-boilerplate"
 version = "0.1.0"
-description = "Internal toolkit for automating MediaMarktSaturn Google Tag Manager workflows."
-authors = ["MediaMarktSaturn Analytics <analytics@example.com>"]
+description = "Public boilerplate for automating Google Tag Manager workflows."
+authors = ["GTM Manager Contributors <opensource@example.com>"]
 readme = "README.md"
 packages = [{ include = "src" }]
 
