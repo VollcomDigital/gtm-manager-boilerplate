@@ -308,7 +308,8 @@ async function getLiveDriftBlockResult(
   if (!hasWorkspaceDrift(liveDiff)) {
     return { blocked: false };
   }
-  return { blocked: true, versionPath: live.path ?? undefined };
+  const versionPath = live.path ?? undefined;
+  return versionPath ? { blocked: true, versionPath } : { blocked: true };
 }
 
 async function syncSingleRepoContainer(
@@ -712,7 +713,9 @@ async function promoteEnvironment(
   if (current.type != null) patch.type = current.type;
   if (current.description != null) patch.description = current.description;
   if (current.url != null) patch.url = current.url;
-  if (current.enableDebug !== undefined) patch.enableDebug = current.enableDebug;
+  if (current.enableDebug === true || current.enableDebug === false) {
+    patch.enableDebug = current.enableDebug;
+  }
   if (current.workspaceId != null) patch.workspaceId = current.workspaceId;
 
   const fingerprint = current.fingerprint ?? undefined;

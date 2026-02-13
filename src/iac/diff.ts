@@ -115,6 +115,9 @@ export function matchesDesiredSubset(current: unknown, desired: unknown): boolea
     return matchesDesiredArray(current, desired);
   }
 
+  if (!isRecord(desired)) {
+    return false;
+  }
   return matchesDesiredObject(current, desired);
 }
 

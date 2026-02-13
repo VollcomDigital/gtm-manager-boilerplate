@@ -361,8 +361,9 @@ export class GtmClient {
         containers.find((c) => c.publicId === containerIdCandidate)
       );
     }
-    if (locator.containerName) {
-      return containers.find((c) => (c.name ?? "").toLowerCase() === locator.containerName.toLowerCase());
+    const containerName = locator.containerName;
+    if (containerName) {
+      return containers.find((c) => (c.name ?? "").toLowerCase() === containerName.toLowerCase());
     }
     return undefined;
   }
@@ -385,7 +386,7 @@ export class GtmClient {
 
   private buildResolvedAccountContainer(
     accountId: string,
-    accountName: string | undefined,
+    accountName: string | null | undefined,
     container: tagmanager_v2.Schema$Container,
     locator: AccountContainerLocator
   ): ResolvedAccountContainer {

@@ -178,8 +178,14 @@ function mergePolicy(
   for (const key of PROTECTED_NAME_KEYS) {
     merged.protectedNames[key] = mergeStringSet(base.protectedNames[key], overlay.protectedNames[key]);
   }
-  merged.deleteAllowTypes = mergeStringSet(base.deleteAllowTypes, overlay.deleteAllowTypes);
-  merged.deleteDenyTypes = mergeStringSet(base.deleteDenyTypes, overlay.deleteDenyTypes);
+  merged.deleteAllowTypes = mergeStringSet(
+    base.deleteAllowTypes,
+    overlay.deleteAllowTypes
+  ) as WorkspaceDesiredState["policy"]["deleteAllowTypes"];
+  merged.deleteDenyTypes = mergeStringSet(
+    base.deleteDenyTypes,
+    overlay.deleteDenyTypes
+  ) as WorkspaceDesiredState["policy"]["deleteDenyTypes"];
   return merged;
 }
 
