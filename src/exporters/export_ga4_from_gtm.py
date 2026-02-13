@@ -25,8 +25,10 @@ SCOPES = ["https://www.googleapis.com/auth/tagmanager.readonly"]
 
 GA4_EVENT_TYPE = "gaawe"  # GA4 Event
 GA4_CONFIG_TYPE = "gaawc"  # GA4 Configuration
-DEFAULT_SALESLINE_CONFIG = "config/saleslines.yaml"
-SALESLINE_ENV_VAR = "GTM_SALESLINES_JSON"
+DEFAULT_TARGETS_CONFIG = "config/targets.yaml"
+LEGACY_DEFAULT_SALESLINE_CONFIG = "config/saleslines.yaml"
+TARGETS_ENV_VAR = "GTM_TARGETS_JSON"
+LEGACY_SALESLINES_ENV_VAR = "GTM_SALESLINES_JSON"
 
 
 def safe_get(data: Dict[str, Any], key: str, default=None):
@@ -34,11 +36,11 @@ def safe_get(data: Dict[str, Any], key: str, default=None):
     return data.get(key, default) if isinstance(data, dict) else default
 
 
-def load_salesline_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]:
+def load_target_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]:
     """
-    Load the salesline -> container mapping from YAML or environment variables.
+    Load the target-key -> container mapping from YAML or environment variables.
 
-    Returns a dict keyed by salesline slug. Supports optional grouping keys
+    Returns a dict keyed by target key. Supports optional grouping keys
     (e.g., "central:") which will be flattened automatically.
     """
     mapping = _load_salesline_mapping_from_file(config_path)
@@ -46,15 +48,15 @@ def load_salesline_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]
         mapping = _load_salesline_mapping_from_env()
 
     if mapping is None:
-        source_hint = config_path or DEFAULT_SALESLINE_CONFIG
+        source_hint = config_path or DEFAULT_TARGETS_CONFIG
         raise FileNotFoundError(
-            "No salesline mapping found. Provide --config-path, create "
-            f"{source_hint}, or export a JSON mapping via the "
-            f"{SALESLINE_ENV_VAR} environment variable.",
+            "No target mapping found. Provide --config-path, create "
+            f"{source_hint}, or export JSON via {TARGETS_ENV_VAR} "
+            f"(legacy: {LEGACY_SALESLINES_ENV_VAR}).",
         )
 
     if not isinstance(mapping, dict):
-        raise ValueError("Salesline entries must be provided as a mapping.")
+        raise ValueError("Target entries must be provided as a mapping.")
 
     return _normalize_salesline_mapping(mapping)
 
@@ -63,9 +65,13 @@ def _resolve_salesline_config_path(config_path: str | None) -> pathlib.Path | No
     if config_path:
         return pathlib.Path(config_path)
 
-    default_path = pathlib.Path(DEFAULT_SALESLINE_CONFIG)
-    if default_path.exists():
-        return default_path
+    default_targets_path = pathlib.Path(DEFAULT_TARGETS_CONFIG)
+    if default_targets_path.exists():
+        return default_targets_path
+
+    legacy_default_path = pathlib.Path(LEGACY_DEFAULT_SALESLINE_CONFIG)
+    if legacy_default_path.exists():
+        return legacy_default_path
 
     return None
 
@@ -79,13 +85,17 @@ def _load_salesline_mapping_from_file(config_path: str | None) -> Dict[str, Any]
         raw_data = yaml.safe_load(config_file) or {}
 
     if not isinstance(raw_data, dict):
-        raise ValueError("Salesline config must be a mapping of saleslines.")
+        raise ValueError("Target config must be a mapping.")
 
-    return raw_data.get("saleslines", raw_data)
+    return raw_data.get("targets", raw_data.get("saleslines", raw_data))
 
 
 def _load_salesline_mapping_from_env() -> Dict[str, Any] | None:
-    env_payload = os.getenv(SALESLINE_ENV_VAR)
+    source_env_var = TARGETS_ENV_VAR
+    env_payload = os.getenv(source_env_var)
+    if not env_payload:
+        source_env_var = LEGACY_SALESLINES_ENV_VAR
+        env_payload = os.getenv(source_env_var)
     if not env_payload:
         return None
 
@@ -93,7 +103,7 @@ def _load_salesline_mapping_from_env() -> Dict[str, Any] | None:
         parsed = json.loads(env_payload)
     except json.JSONDecodeError as exc:
         raise ValueError(
-            f"Failed to parse {SALESLINE_ENV_VAR} environment variable as JSON.",
+            f"Failed to parse {source_env_var} environment variable as JSON.",
         ) from exc
 
     return parsed
@@ -104,7 +114,7 @@ def _normalize_salesline_mapping(mapping: Dict[str, Any]) -> Dict[str, Dict[str,
 
     for key, value in mapping.items():
         if not isinstance(value, dict):
-            raise ValueError(f"Salesline '{key}' configuration must be a mapping.")
+            raise ValueError(f"Target key '{key}' configuration must be a mapping.")
 
         if {"account_id", "container_id"} <= set(value.keys()):
             cleaned[key] = {
@@ -129,7 +139,7 @@ def _normalize_salesline_mapping(mapping: Dict[str, Any]) -> Dict[str, Dict[str,
             continue
 
         raise ValueError(
-            f"Salesline '{key}' configuration is missing 'account_id'/'container_id' "
+            f"Target key '{key}' configuration is missing 'account_id'/'container_id' "
             "and does not contain sub-entries with those fields.",
         )
 
@@ -139,22 +149,22 @@ def _normalize_salesline_mapping(mapping: Dict[str, Any]) -> Dict[str, Dict[str,
 def resolve_account_and_container(
     account_id: str | None,
     container_id: str | None,
-    salesline: str | None,
+    target_key: str | None,
     config_path: str | None,
 ) -> Tuple[str, str]:
     """
-    Resolve account/container identifiers directly or via salesline mapping.
+    Resolve account/container identifiers directly or via target-key mapping.
     """
     resolved_account = account_id
     resolved_container = container_id
 
-    if salesline:
+    if target_key:
         mapping = load_salesline_mapping(config_path)
-        entry = mapping.get(salesline)
+        entry = mapping.get(target_key)
         if not entry:
             available = ", ".join(sorted(mapping.keys()))
             raise ValueError(
-                f"Salesline '{salesline}' not found. Available entries: {available or 'none'}",
+                f"Target key '{target_key}' not found. Available entries: {available or 'none'}",
             )
 
         resolved_account = resolved_account or entry.get("account_id")
@@ -162,7 +172,7 @@ def resolve_account_and_container(
 
     if not resolved_account or not resolved_container:
         raise ValueError(
-            "Provide --account-id and --container-id or specify --salesline with a valid mapping.",
+            "Provide --account-id and --container-id or specify --target-key/--salesline with a valid mapping.",
         )
 
     return str(resolved_account), str(resolved_container)
@@ -357,14 +367,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--account-id", help="GTM Account ID (e.g., 2824463661)")
     parser.add_argument("--container-id", help="GTM Container ID (e.g., 51955729)")
     parser.add_argument(
+        "--target-key",
+        help="Target key defined in the YAML mapping for account/container lookup.",
+    )
+    parser.add_argument(
         "--salesline",
-        help="Salesline key defined in the YAML mapping for account/container lookup.",
+        dest="legacy_target_key",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--config-path",
         help=(
-            "Path to the salesline configuration YAML. "
-            f"Defaults to {DEFAULT_SALESLINE_CONFIG} when --salesline is used."
+            "Path to the target configuration YAML. "
+            f"Defaults to {DEFAULT_TARGETS_CONFIG} (legacy fallback: {LEGACY_DEFAULT_SALESLINE_CONFIG}) "
+            "when --target-key/--salesline is used."
         ),
     )
     parser.add_argument(
@@ -397,7 +413,7 @@ def main():
         account_id, container_id = resolve_account_and_container(
             args.account_id,
             args.container_id,
-            args.salesline,
+            args.target_key or args.legacy_target_key,
             args.config_path,
         )
         service = build("tagmanager", "v2", credentials=credentials, cache_discovery=False)

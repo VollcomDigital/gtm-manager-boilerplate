@@ -1,8 +1,7 @@
 {
-  "name": "vd-gtm-manager-iac",
+  "name": "gtm-manager-boilerplate",
   "version": "0.1.0",
-  "private": true,
-  "description": "Infrastructure-as-Code tooling for Google Tag Manager (GTM) via the GTM API v2.",
+  "description": "Public boilerplate for Google Tag Manager (GTM) Infrastructure-as-Code workflows.",
   "license": "MIT",
   "engines": {
     "node": ">=20"

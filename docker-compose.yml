@@ -3,7 +3,7 @@ version: "3.11"
 services:
   gtm-manager:
     build: .
-    image: mms-gtm-manager:latest
+    image: gtm-manager-boilerplate:latest
     working_dir: /app
     volumes:
       - ./:/app
@@ -11,6 +11,8 @@ services:
       - GTM_AUTH_METHOD=user
       - GTM_CREDENTIALS_PATH=/secrets/client_secrets.json
       - GTM_OUTPUT_PATH=/app/data/exports/ga4_tags.csv
+      - GTM_TARGET_KEY
+      - GTM_TARGETS_JSON
       - GTM_SALESLINE
       - GTM_SALESLINES_JSON
       - GTM_ACCOUNT_ID
