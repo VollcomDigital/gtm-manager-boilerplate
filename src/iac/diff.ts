@@ -15,6 +15,92 @@ function getName(entity: unknown): string | undefined {
   return typeof n === "string" && n.trim().length ? n : undefined;
 }
 
+function isPrimitiveComparable(value: unknown): boolean {
+  return value === null || ["string", "number", "boolean"].includes(typeof value);
+}
+
+function matchesPrimitiveArraySubset(current: unknown[], desired: unknown[]): boolean {
+  return desired.every((dv) => current.some((cv) => Object.is(cv, dv)));
+}
+
+function resolveIdentityKey(items: unknown[]): "name" | "key" | undefined {
+  const hasName = items.every((v) => isRecord(v) && typeof v.name === "string");
+  if (hasName) {
+    return "name";
+  }
+  const hasKey = items.every((v) => isRecord(v) && typeof v.key === "string");
+  return hasKey ? "key" : undefined;
+}
+
+function buildIdentityIndex(items: unknown[], identityKey: "name" | "key"): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  for (const item of items) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const id = item[identityKey];
+    if (typeof id === "string" && id.trim().length) {
+      out.set(id.toLowerCase(), item);
+    }
+  }
+  return out;
+}
+
+function matchesNamedOrKeyedArraySubset(current: unknown[], desired: unknown[], identityKey: "name" | "key"): boolean {
+  const currentIndex = buildIdentityIndex(current, identityKey);
+  for (const desiredItem of desired) {
+    const id = (desiredItem as Record<string, unknown>)[identityKey];
+    if (typeof id !== "string") {
+      return false;
+    }
+    const currentItem = currentIndex.get(id.toLowerCase());
+    if (!currentItem || !matchesDesiredSubset(currentItem, desiredItem)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function matchesOrderedArray(current: unknown[], desired: unknown[]): boolean {
+  if (current.length !== desired.length) {
+    return false;
+  }
+  return desired.every((dv, i) => matchesDesiredSubset(current[i], dv));
+}
+
+function matchesDesiredArray(current: unknown, desired: unknown[]): boolean {
+  if (!Array.isArray(current)) {
+    return false;
+  }
+  if (desired.length === 0) {
+    return true;
+  }
+  if (desired.every(isPrimitiveComparable)) {
+    return matchesPrimitiveArraySubset(current, desired);
+  }
+
+  const identityKey = resolveIdentityKey(desired);
+  if (identityKey) {
+    return matchesNamedOrKeyedArraySubset(current, desired, identityKey);
+  }
+  return matchesOrderedArray(current, desired);
+}
+
+function matchesDesiredObject(current: unknown, desired: Record<string, unknown>): boolean {
+  if (!isRecord(current)) {
+    return false;
+  }
+  for (const [key, desiredValue] of Object.entries(desired)) {
+    if (desiredValue === undefined) {
+      continue;
+    }
+    if (!(key in current) || !matchesDesiredSubset(current[key], desiredValue)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Checks whether `current` satisfies all fields specified by `desired`.
  *
@@ -26,52 +112,10 @@ export function matchesDesiredSubset(current: unknown, desired: unknown): boolea
   }
 
   if (Array.isArray(desired)) {
-    if (!Array.isArray(current)) return false;
-    if (desired.length === 0) return true;
-
-    // If desired array contains primitives, treat it as a subset.
-    const primitives = desired.every((v) => v === null || ["string", "number", "boolean"].includes(typeof v));
-    if (primitives) {
-      return desired.every((dv) => current.some((cv) => Object.is(cv, dv)));
-    }
-
-    // If desired array contains named/keyed objects, match by identity key.
-    const desiredHasName = desired.every((v) => isRecord(v) && typeof v.name === "string");
-    const desiredHasKey = desired.every((v) => isRecord(v) && typeof v.key === "string");
-    if (desiredHasName || desiredHasKey) {
-      const identityKey = desiredHasName ? "name" : "key";
-      const currentIndex = new Map<string, unknown>();
-      for (const cv of current) {
-        if (!isRecord(cv)) continue;
-        const id = cv[identityKey];
-        if (typeof id === "string" && id.trim().length) {
-          currentIndex.set(id.toLowerCase(), cv);
-        }
-      }
-
-      for (const dv of desired) {
-        const id = (dv as Record<string, unknown>)[identityKey];
-        if (typeof id !== "string") return false;
-        const cv = currentIndex.get(id.toLowerCase());
-        if (!cv) return false;
-        if (!matchesDesiredSubset(cv, dv)) return false;
-      }
-      return true;
-    }
-
-    // Fallback: treat as ordered array (same length and position).
-    if (current.length !== desired.length) return false;
-    return desired.every((dv, i) => matchesDesiredSubset(current[i], dv));
+    return matchesDesiredArray(current, desired);
   }
 
-  if (!isRecord(current) || !isRecord(desired)) return false;
-
-  for (const [k, dv] of Object.entries(desired)) {
-    if (dv === undefined) continue;
-    if (!(k in current)) return false;
-    if (!matchesDesiredSubset(current[k], dv)) return false;
-  }
-  return true;
+  return matchesDesiredObject(current, desired);
 }
 
 export interface EntityDiff {
@@ -157,13 +201,7 @@ function diffStringSet(desired: string[], current: unknown[]): EntityDiff {
 
   const currentByLower = new Map<string, string>();
   for (const v of current) {
-    let raw: string | undefined;
-    if (typeof v === "string") {
-      raw = v;
-    } else if (isRecord(v) && typeof v.type === "string") {
-      // Support passing API objects like Schema$BuiltInVariable.
-      raw = v.type;
-    }
+    const raw = typeof v === "string" ? v : isRecord(v) && typeof v.type === "string" ? v.type : undefined;
     if (!raw) continue;
     const key = raw.trim().toLowerCase();
     if (key) currentByLower.set(key, raw);

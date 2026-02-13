@@ -54,8 +54,9 @@ export function stripDynamicFieldsDeep(value: unknown): unknown {
  */
 export function canonicalizeDeep(value: unknown): unknown {
   if (Array.isArray(value)) {
-    if (value.every((v) => typeof v === "string")) {
-      return [...value].sort((a, b) => (a as string).localeCompare(b as string));
+    const stringItems = value.filter((v): v is string => typeof v === "string");
+    if (stringItems.length === value.length) {
+      return [...stringItems].sort((a, b) => a.localeCompare(b));
     }
 
     const canonicalItems = value.map(canonicalizeDeep);
@@ -66,14 +67,10 @@ export function canonicalizeDeep(value: unknown): unknown {
       const hasName = items.every((v) => typeof v.name === "string");
       const hasKey = items.every((v) => typeof v.key === "string");
       if (hasName) {
-        return [...items].sort((a, b) =>
-          (String(a.name) as string).toLowerCase().localeCompare((String(b.name) as string).toLowerCase())
-        );
+        return [...items].sort((a, b) => String(a.name).toLowerCase().localeCompare(String(b.name).toLowerCase()));
       }
       if (hasKey) {
-        return [...items].sort((a, b) =>
-          (String(a.key) as string).toLowerCase().localeCompare((String(b.key) as string).toLowerCase())
-        );
+        return [...items].sort((a, b) => String(a.key).toLowerCase().localeCompare(String(b.key).toLowerCase()));
       }
     }
 

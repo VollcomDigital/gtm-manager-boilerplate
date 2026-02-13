@@ -231,6 +231,155 @@ function toLocator(target: {
   };
 }
 
+interface RepoSyncResultItem {
+  key: string;
+  labels: Record<string, string>;
+  workspacePath?: string;
+  sync?: unknown;
+  version?: { versionPath?: string; publishedPath?: string };
+  error?: string;
+}
+
+type RepoContainerConfig = Awaited<ReturnType<typeof loadRepoConfig>>["containers"][number];
+
+function hasEntityDiffChanges(diff: { create: string[]; update: string[]; delete: string[] }): boolean {
+  return diff.create.length > 0 || diff.update.length > 0 || diff.delete.length > 0;
+}
+
+function hasWorkspaceDrift(diff: ReturnType<typeof diffWorkspace>): boolean {
+  return [
+    diff.environments,
+    diff.builtInVariables,
+    diff.folders,
+    diff.clients,
+    diff.transformations,
+    diff.tags,
+    diff.triggers,
+    diff.variables,
+    diff.templates,
+    diff.zones
+  ].some(hasEntityDiffChanges);
+}
+
+function stableStringForHash(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "[unserializable-template-data]";
+  }
+}
+
+function selectRepoContainers(
+  containers: RepoContainerConfig[],
+  containerKeys: string[],
+  labels: Record<string, string>
+): RepoContainerConfig[] {
+  const keysFilter = new Set(containerKeys.map((key) => key.toLowerCase()));
+  return containers.filter((container) => {
+    if (keysFilter.size === 0) {
+      return matchesLabels(container.labels ?? {}, labels);
+    }
+    return keysFilter.has(container.key.toLowerCase()) && matchesLabels(container.labels ?? {}, labels);
+  });
+}
+
+function buildVersionCreateOptions(opts: { versionName?: string; notes?: string }): { name?: string; notes?: string } {
+  const out: { name?: string; notes?: string } = {};
+  if (opts.versionName) out.name = opts.versionName;
+  if (opts.notes) out.notes = opts.notes;
+  return out;
+}
+
+async function getLiveDriftBlockResult(
+  gtm: GtmClient,
+  containerPath: string,
+  workspace: RepoContainerConfig["workspace"],
+  opts: { blockOnLiveDrift: boolean; force: boolean; dryRun: boolean }
+): Promise<{ blocked: boolean; versionPath?: string }> {
+  if (!opts.blockOnLiveDrift || opts.force || opts.dryRun) {
+    return { blocked: false };
+  }
+  const live = await gtm.getLiveContainerVersion(containerPath);
+  const liveSnapshot = snapshotFromContainerVersion(live);
+  liveSnapshot.environments = await gtm.listEnvironments(containerPath);
+  const liveDiff = diffWorkspace(workspace, liveSnapshot);
+  if (!hasWorkspaceDrift(liveDiff)) {
+    return { blocked: false };
+  }
+  return { blocked: true, versionPath: live.path ?? undefined };
+}
+
+async function syncSingleRepoContainer(
+  gtm: GtmClient,
+  container: RepoContainerConfig,
+  opts: {
+    deleteMissing: boolean;
+    dryRun: boolean;
+    validateVariableRefs: boolean;
+    blockOnLiveDrift: boolean;
+    force: boolean;
+    publish: boolean;
+    versionName?: string;
+    notes?: string;
+  }
+): Promise<RepoSyncResultItem> {
+  const labels = container.labels ?? {};
+  const { accountId, containerId } = await gtm.resolveAccountAndContainer(toLocator(container.target));
+  const containerPath = gtm.toContainerPath(accountId, containerId);
+
+  const liveDriftResult = await getLiveDriftBlockResult(gtm, containerPath, container.workspace, opts);
+  if (liveDriftResult.blocked) {
+    return {
+      key: container.key,
+      labels,
+      error: "Live published version differs from desired state; refusing to sync without --force. Run diff-live for details.",
+      ...(liveDriftResult.versionPath ? { version: { versionPath: liveDriftResult.versionPath } } : {})
+    };
+  }
+
+  const ws = await gtm.getOrCreateWorkspace({
+    accountId,
+    containerId,
+    workspaceName: container.workspace.workspaceName
+  });
+  if (!ws.workspaceId) {
+    throw new Error("Workspace response missing workspaceId.");
+  }
+
+  const workspacePath = gtm.toWorkspacePath(accountId, containerId, ws.workspaceId);
+  const sync = await syncWorkspace(gtm, workspacePath, container.workspace, {
+    dryRun: opts.dryRun,
+    deleteMissing: opts.deleteMissing,
+    updateExisting: true,
+    validateVariableRefs: opts.validateVariableRefs
+  });
+
+  const result: RepoSyncResultItem = {
+    key: container.key,
+    labels,
+    workspacePath,
+    sync
+  };
+
+  if (opts.publish && !opts.dryRun) {
+    const versionOptions = buildVersionCreateOptions(opts);
+    const created = await gtm.createContainerVersionFromWorkspace(workspacePath, versionOptions);
+    const versionPath = created.containerVersion?.path ?? undefined;
+    if (!versionPath) {
+      throw new Error("Version creation did not return containerVersion.path.");
+    }
+    const published = await gtm.publishContainerVersion(versionPath);
+    result.version = {
+      versionPath,
+      publishedPath: published.containerVersion?.path ?? versionPath
+    };
+  }
+
+  return result;
+}
+
 async function listAccounts(gtm: GtmClient, asJson: boolean): Promise<void> {
   const accounts = await gtm.listAccounts();
   if (asJson) {
@@ -558,15 +707,13 @@ async function promoteEnvironment(
   }
 
   const current = await gtm.getEnvironment(environmentPath);
-  const patch: GtmEnvironment = {
-    ...(current.name != null ? { name: current.name } : {}),
-    ...(current.type != null ? { type: current.type } : {}),
-    ...(current.description != null ? { description: current.description } : {}),
-    ...(current.url != null ? { url: current.url } : {}),
-    ...(current.enableDebug != null ? { enableDebug: current.enableDebug } : {}),
-    ...(current.workspaceId != null ? { workspaceId: current.workspaceId } : {}),
-    containerVersionId
-  };
+  const patch: GtmEnvironment = { containerVersionId };
+  if (current.name != null) patch.name = current.name;
+  if (current.type != null) patch.type = current.type;
+  if (current.description != null) patch.description = current.description;
+  if (current.url != null) patch.url = current.url;
+  if (current.enableDebug !== undefined) patch.enableDebug = current.enableDebug;
+  if (current.workspaceId != null) patch.workspaceId = current.workspaceId;
 
   const fingerprint = current.fingerprint ?? undefined;
   const updated = await gtm.updateEnvironment(environmentPath, patch, fingerprint ? { fingerprint } : {});
@@ -615,6 +762,33 @@ async function deleteWorkspace(gtm: GtmClient, workspacePath: string, dryRun: bo
   console.log(`deleted workspace path=${workspacePath}`);
 }
 
+function resolveWorkspacePath(
+  gtm: GtmClient,
+  accountId: string,
+  containerId: string,
+  workspace: { path?: string | null; workspaceId?: string | null }
+): string | undefined {
+  if (workspace.path) {
+    return workspace.path;
+  }
+  if (workspace.workspaceId) {
+    return gtm.toWorkspacePath(accountId, containerId, workspace.workspaceId);
+  }
+  return undefined;
+}
+
+function printResetWorkspaceDryRun(
+  asJson: boolean,
+  payload: Record<string, unknown>,
+  fallbackMessage: string
+): void {
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  console.log(fallbackMessage);
+}
+
 async function resetWorkspace(
   gtm: GtmClient,
   locator: AccountContainerLocator,
@@ -631,30 +805,25 @@ async function resetWorkspace(
 
   const workspaces = await gtm.listWorkspaces(containerPath);
   const existing = workspaces.find((w) => (w.name ?? "").toLowerCase() === workspaceName.toLowerCase());
-  if (existing) {
-    const workspacePath =
-      existing.path ?? (existing.workspaceId ? gtm.toWorkspacePath(accountId, containerId, existing.workspaceId) : undefined);
-    if (workspacePath) {
-      if (dryRun) {
-        const msg = { dryRun: true, action: "resetWorkspace", note: "would delete existing workspace", workspacePath };
-        if (asJson) {
-          console.log(JSON.stringify(msg, null, 2));
-        } else {
-          console.log(`dry-run: would delete workspace path=${workspacePath}`);
-        }
-        return;
-      }
-      await gtm.deleteWorkspace(workspacePath);
-    }
+  const existingPath = existing ? resolveWorkspacePath(gtm, accountId, containerId, existing) : undefined;
+  if (existingPath && dryRun) {
+    printResetWorkspaceDryRun(
+      asJson,
+      { dryRun: true, action: "resetWorkspace", note: "would delete existing workspace", workspacePath: existingPath },
+      `dry-run: would delete workspace path=${existingPath}`
+    );
+    return;
+  }
+  if (existingPath) {
+    await gtm.deleteWorkspace(existingPath);
   }
 
   if (dryRun) {
-    const msg = { dryRun: true, action: "resetWorkspace", note: "would create workspace", containerPath, workspaceName };
-    if (asJson) {
-      console.log(JSON.stringify(msg, null, 2));
-    } else {
-      console.log(`dry-run: would create workspace name="${workspaceName}" in ${containerPath}`);
-    }
+    printResetWorkspaceDryRun(
+      asJson,
+      { dryRun: true, action: "resetWorkspace", note: "would create workspace", containerPath, workspaceName },
+      `dry-run: would create workspace name="${workspaceName}" in ${containerPath}`
+    );
     return;
   }
 
@@ -749,18 +918,7 @@ async function diffWorkspaceFromConfig(
     diff.zones.delete = [];
   }
 
-  const hasDrift = [
-    diff.environments,
-    diff.builtInVariables,
-    diff.folders,
-    diff.clients,
-    diff.transformations,
-    diff.tags,
-    diff.triggers,
-    diff.variables,
-    diff.templates,
-    diff.zones
-  ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
+  const hasDrift = hasWorkspaceDrift(diff);
 
   if (options.failOnDrift && hasDrift) {
     process.exitCode = 2;
@@ -804,18 +962,7 @@ async function diffLiveFromConfig(
     diff.zones.delete = [];
   }
 
-  const hasDrift = [
-    diff.environments,
-    diff.builtInVariables,
-    diff.folders,
-    diff.clients,
-    diff.transformations,
-    diff.tags,
-    diff.triggers,
-    diff.variables,
-    diff.templates,
-    diff.zones
-  ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
+  const hasDrift = hasWorkspaceDrift(diff);
 
   if (options.failOnDrift && hasDrift) {
     process.exitCode = 2;
@@ -963,18 +1110,7 @@ async function syncWorkspaceFromConfig(
     const liveSnapshot = snapshotFromContainerVersion(live);
     liveSnapshot.environments = await gtm.listEnvironments(containerPath);
     const liveDiff = diffWorkspace(desired, liveSnapshot);
-    const hasDrift = [
-      liveDiff.environments,
-      liveDiff.builtInVariables,
-      liveDiff.folders,
-      liveDiff.clients,
-      liveDiff.transformations,
-      liveDiff.tags,
-      liveDiff.triggers,
-      liveDiff.variables,
-      liveDiff.templates,
-      liveDiff.zones
-    ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
+    const hasDrift = hasWorkspaceDrift(liveDiff);
     if (hasDrift) {
       throw new Error(
         `Live published version differs from desired state; refusing to sync without --force. ` +
@@ -1016,111 +1152,23 @@ async function syncRepoFromConfig(
   asJson: boolean
 ): Promise<void> {
   const repo = await loadRepoConfig(configPaths);
-  const keysFilter = new Set(opts.containerKeys.map((k) => k.toLowerCase()));
-
-  const selected = repo.containers.filter((c) => {
-    if (keysFilter.size && !keysFilter.has(c.key.toLowerCase())) return false;
-    return matchesLabels(c.labels ?? {}, opts.labels);
-  });
-
-  const results: Array<{
-    key: string;
-    labels: Record<string, string>;
-    workspacePath?: string;
-    sync?: unknown;
-    version?: { versionPath?: string; publishedPath?: string };
-    error?: string;
-  }> = [];
+  const selected = selectRepoContainers(repo.containers, opts.containerKeys, opts.labels);
+  const results: RepoSyncResultItem[] = [];
 
   let hadError = false;
 
-  for (const c of selected) {
+  for (const container of selected) {
     try {
-      const { accountId, containerId } = await gtm.resolveAccountAndContainer(toLocator(c.target));
-      const containerPath = gtm.toContainerPath(accountId, containerId);
-
-      if (opts.blockOnLiveDrift && !opts.force && !opts.dryRun) {
-        const live = await gtm.getLiveContainerVersion(containerPath);
-        const liveSnapshot = snapshotFromContainerVersion(live);
-        liveSnapshot.environments = await gtm.listEnvironments(containerPath);
-        const liveDiff = diffWorkspace(c.workspace, liveSnapshot);
-        const hasDrift = [
-          liveDiff.environments,
-          liveDiff.builtInVariables,
-          liveDiff.folders,
-          liveDiff.clients,
-          liveDiff.transformations,
-          liveDiff.tags,
-          liveDiff.triggers,
-          liveDiff.variables,
-          liveDiff.templates,
-          liveDiff.zones
-        ].some((d) => d.create.length > 0 || d.update.length > 0 || d.delete.length > 0);
-        if (hasDrift) {
-          const version = live.path ? { versionPath: live.path } : undefined;
-          results.push({
-            key: c.key,
-            labels: c.labels ?? {},
-            error:
-              "Live published version differs from desired state; refusing to sync without --force. Run diff-live for details.",
-            ...(version ? { version } : {})
-          });
-          hadError = true;
-          continue;
-        }
+      const result = await syncSingleRepoContainer(gtm, container, opts);
+      if (result.error) {
+        hadError = true;
       }
-
-      const ws = await gtm.getOrCreateWorkspace({
-        accountId,
-        containerId,
-        workspaceName: c.workspace.workspaceName
-      });
-      if (!ws.workspaceId) throw new Error("Workspace response missing workspaceId.");
-      const workspacePath = gtm.toWorkspacePath(accountId, containerId, ws.workspaceId);
-
-      const sync = await syncWorkspace(gtm, workspacePath, c.workspace, {
-        dryRun: opts.dryRun,
-        deleteMissing: opts.deleteMissing,
-        updateExisting: true,
-        validateVariableRefs: opts.validateVariableRefs
-      });
-
-      const r: {
-        key: string;
-        labels: Record<string, string>;
-        workspacePath?: string;
-        sync?: unknown;
-        version?: { versionPath?: string; publishedPath?: string };
-      } = {
-        key: c.key,
-        labels: c.labels ?? {},
-        workspacePath,
-        sync
-      };
-
-      if (opts.publish && !opts.dryRun) {
-        const versionOptions: { name?: string; notes?: string } = {};
-        if (opts.versionName) versionOptions.name = opts.versionName;
-        if (opts.notes) versionOptions.notes = opts.notes;
-
-        const created = await gtm.createContainerVersionFromWorkspace(workspacePath, versionOptions);
-        const versionPath = created.containerVersion?.path ?? undefined;
-        if (!versionPath) {
-          throw new Error("Version creation did not return containerVersion.path.");
-        }
-        const published = await gtm.publishContainerVersion(versionPath);
-        r.version = {
-          versionPath,
-          publishedPath: published.containerVersion?.path ?? versionPath
-        };
-      }
-
-      results.push(r);
+      results.push(result);
     } catch (err: unknown) {
       hadError = true;
       results.push({
-        key: c.key,
-        labels: c.labels ?? {},
+        key: container.key,
+        labels: container.labels ?? {},
         error: err instanceof Error ? err.message : String(err)
       });
     }
@@ -1146,7 +1194,7 @@ async function hashConfig(configPath: string, asJson: boolean): Promise<void> {
   const desired = await loadWorkspaceDesiredState(configPath);
   const templates = desired.templates.map((t) => ({
     name: t.name,
-    sha256: sha256HexFromString(String((t as unknown as { templateData?: unknown }).templateData ?? ""))
+    sha256: sha256HexFromString(stableStringForHash((t as { templateData?: unknown }).templateData))
   }));
 
   const out = { workspaceName: desired.workspaceName, templates };
@@ -1438,9 +1486,11 @@ async function main(): Promise<void> {
         name: args.name,
         type: args.type ?? "USER",
         ...(args.url ? { url: args.url } : {}),
-        ...(args.description ? { description: args.description } : {}),
-        ...(enableDebug !== undefined ? { enableDebug } : {})
+        ...(args.description ? { description: args.description } : {})
       };
+      if (enableDebug === true || enableDebug === false) {
+        env.enableDebug = enableDebug;
+      }
 
       await createEnvironment(
         gtm,
@@ -1481,9 +1531,11 @@ async function main(): Promise<void> {
         ...(args.url ? { url: args.url } : {}),
         ...(args.description ? { description: args.description } : {}),
         ...(args.containerVersionId ? { containerVersionId: args.containerVersionId } : {}),
-        ...(args.workspaceId ? { workspaceId: args.workspaceId } : {}),
-        ...(enableDebug !== undefined ? { enableDebug } : {})
+        ...(args.workspaceId ? { workspaceId: args.workspaceId } : {})
       };
+      if (enableDebug === true || enableDebug === false) {
+        patch.enableDebug = enableDebug;
+      }
 
       await updateEnvironment(gtm, args.environmentPath, patch, asJson, dryRun);
       return;
@@ -1804,9 +1856,13 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  console.error(`Fatal: ${msg}`);
-  process.exitCode = 1;
-});
+void (async () => {
+  try {
+    await main();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Fatal: ${msg}`);
+    process.exitCode = 1;
+  }
+})();
 

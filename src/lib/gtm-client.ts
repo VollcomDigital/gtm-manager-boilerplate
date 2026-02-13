@@ -87,7 +87,7 @@ export class GtmClient {
    */
   private stripIacMetadataDeep<T>(value: T): T {
     if (Array.isArray(value)) {
-      return value.map((v) => this.stripIacMetadataDeep(v)) as unknown as T;
+      return value.map((v) => this.stripIacMetadataDeep(v)) as T;
     }
     if (!value || typeof value !== "object") {
       return value;
@@ -97,7 +97,7 @@ export class GtmClient {
       if (k.startsWith("__")) continue;
       out[k] = this.stripIacMetadataDeep(v);
     }
-    return out as unknown as T;
+    return out as T;
   }
 
   toAccountPath(accountId: string): string {
@@ -181,9 +181,9 @@ export class GtmClient {
         statusValue = String(status);
       } else {
         try {
-          statusValue = JSON.stringify(status);
+          statusValue = JSON.stringify(status) ?? "unknown";
         } catch {
-          statusValue = String(status);
+          statusValue = "[unserializable-status]";
         }
       }
       const suffix = typeof statusText === "string" ? ` ${statusText}` : "";
@@ -345,56 +345,58 @@ export class GtmClient {
     return envs.find((e) => (e.name ?? "").toLowerCase() === environmentName.toLowerCase());
   }
 
-  async resolveAccountAndContainer(locator: AccountContainerLocator): Promise<ResolvedAccountContainer> {
-    const accountId = locator.accountId ?? (locator.accountName ? await this.getAccountIdByName(locator.accountName) : undefined);
-    if (!accountId) {
-      throw new Error("Missing account locator. Provide `accountId` or `accountName`.");
-    }
-
-    const containers = await this.listContainers(accountId);
-
+  private findContainerByLocator(
+    containers: tagmanager_v2.Schema$Container[],
+    locator: AccountContainerLocator
+  ): tagmanager_v2.Schema$Container | undefined {
     const containerIdCandidate = locator.containerId ?? locator.containerPublicId;
-    let container: tagmanager_v2.Schema$Container | undefined;
+    const candidateUpper = containerIdCandidate?.toUpperCase();
 
-    // Accept GTM-XXXX (publicId) in `containerId` for convenience.
-    if (containerIdCandidate && containerIdCandidate.toUpperCase().startsWith("GTM-")) {
-      container = containers.find((c) => (c.publicId ?? "").toUpperCase() === containerIdCandidate.toUpperCase());
-    } else if (containerIdCandidate) {
-      container = containers.find((c) => c.containerId === containerIdCandidate);
-      // Fallback: numeric-looking containerId could still have been a publicId supplied without GTM- prefix (rare).
-      if (!container) {
-        container = containers.find((c) => c.publicId === containerIdCandidate);
-      }
-    } else if (locator.containerName) {
-      container = containers.find((c) => (c.name ?? "").toLowerCase() === locator.containerName!.toLowerCase());
+    if (candidateUpper?.startsWith("GTM-")) {
+      return containers.find((c) => (c.publicId ?? "").toUpperCase() === candidateUpper);
     }
-
-    if (!container?.containerId) {
-      const hints = [
-        locator.containerId ? `containerId=${locator.containerId}` : undefined,
-        locator.containerPublicId ? `containerPublicId=${locator.containerPublicId}` : undefined,
-        locator.containerName ? `containerName=${locator.containerName}` : undefined
-      ]
-        .filter(Boolean)
-        .join(", ");
-
-      const available = containers
-        .map((c) => `${c.name ?? "?"} (containerId=${c.containerId ?? "?"}, publicId=${c.publicId ?? "?"})`)
-        .join("; ");
-
-      throw new Error(`Container not found (${hints}). Available containers: ${available}`);
+    if (containerIdCandidate) {
+      return (
+        containers.find((c) => c.containerId === containerIdCandidate) ??
+        containers.find((c) => c.publicId === containerIdCandidate)
+      );
     }
+    if (locator.containerName) {
+      return containers.find((c) => (c.name ?? "").toLowerCase() === locator.containerName.toLowerCase());
+    }
+    return undefined;
+  }
 
-    const account = (await this.listAccounts()).find((a) => a.accountId === accountId);
+  private buildContainerLookupHints(locator: AccountContainerLocator): string {
+    return [
+      locator.containerId ? `containerId=${locator.containerId}` : undefined,
+      locator.containerPublicId ? `containerPublicId=${locator.containerPublicId}` : undefined,
+      locator.containerName ? `containerName=${locator.containerName}` : undefined
+    ]
+      .filter(Boolean)
+      .join(", ");
+  }
 
+  private summarizeContainers(containers: tagmanager_v2.Schema$Container[]): string {
+    return containers
+      .map((c) => `${c.name ?? "?"} (containerId=${c.containerId ?? "?"}, publicId=${c.publicId ?? "?"})`)
+      .join("; ");
+  }
+
+  private buildResolvedAccountContainer(
+    accountId: string,
+    accountName: string | undefined,
+    container: tagmanager_v2.Schema$Container,
+    locator: AccountContainerLocator
+  ): ResolvedAccountContainer {
     const resolved: ResolvedAccountContainer = {
       accountId,
-      containerId: container.containerId
+      containerId: container.containerId!
     };
 
-    const accountName = account?.name ?? locator.accountName;
-    if (accountName) {
-      resolved.accountName = accountName;
+    const resolvedAccountName = accountName ?? locator.accountName;
+    if (resolvedAccountName) {
+      resolved.accountName = resolvedAccountName;
     }
 
     const containerName = container.name ?? locator.containerName;
@@ -408,6 +410,25 @@ export class GtmClient {
     }
 
     return resolved;
+  }
+
+  async resolveAccountAndContainer(locator: AccountContainerLocator): Promise<ResolvedAccountContainer> {
+    const accountId = locator.accountId ?? (locator.accountName ? await this.getAccountIdByName(locator.accountName) : undefined);
+    if (!accountId) {
+      throw new Error("Missing account locator. Provide `accountId` or `accountName`.");
+    }
+
+    const containers = await this.listContainers(accountId);
+    const container = this.findContainerByLocator(containers, locator);
+
+    if (!container?.containerId) {
+      const hints = this.buildContainerLookupHints(locator);
+      const available = this.summarizeContainers(containers);
+      throw new Error(`Container not found (${hints}). Available containers: ${available}`);
+    }
+
+    const account = (await this.listAccounts()).find((a) => a.accountId === accountId);
+    return this.buildResolvedAccountContainer(accountId, account?.name, container, locator);
   }
 
   /**

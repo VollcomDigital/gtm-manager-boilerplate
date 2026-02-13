@@ -48,14 +48,20 @@ function displayEntityName(nameValue: unknown): string {
 function valueToStableString(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return "";
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return `${value}`;
+  }
+  if (typeof value === "symbol") {
+    return value.description ?? "symbol";
+  }
   if (typeof value === "object") {
     try {
-      return JSON.stringify(value);
+      return JSON.stringify(value) ?? "";
     } catch {
-      return String(value);
+      return "[unserializable-object]";
     }
   }
-  return String(value);
+  return "";
 }
 
 function ensureUniqueNames(entities: Array<{ name: string }>, entityType: string): void {
@@ -98,47 +104,46 @@ function tagWithResolvedTriggers(
   if (!isRecord(desiredTag)) return desiredTag;
   const out: Record<string, unknown> = { ...desiredTag };
 
-  const firingIds = out.firingTriggerId;
+  const tagName = displayEntityName(out.name);
   const firingNames = out.firingTriggerNames;
-  if (firingIds !== undefined && firingNames !== undefined) {
-    throw new Error(`Tag "${displayEntityName(out.name)}" cannot specify both firingTriggerId and firingTriggerNames.`);
+  if (out.firingTriggerId !== undefined && firingNames !== undefined) {
+    throw new Error(`Tag "${tagName}" cannot specify both firingTriggerId and firingTriggerNames.`);
   }
-
-  const blockingIds = out.blockingTriggerId;
-  const blockingNames = out.blockingTriggerNames;
-  if (blockingIds !== undefined && blockingNames !== undefined) {
-    throw new Error(`Tag "${displayEntityName(out.name)}" cannot specify both blockingTriggerId and blockingTriggerNames.`);
-  }
-
   if (Array.isArray(firingNames)) {
-    const resolved: string[] = [];
-    for (const n of firingNames) {
-      if (typeof n !== "string" || !n.trim()) continue;
-      const id = triggerNameToId.get(lower(n));
-      if (!id) {
-        throw new Error(`Tag "${displayEntityName(out.name)}" references missing trigger by name: "${n}"`);
-      }
-      resolved.push(id);
-    }
-    out.firingTriggerId = resolved;
+    out.firingTriggerId = resolveTriggerIds(tagName, firingNames, triggerNameToId, "trigger");
     delete out.firingTriggerNames;
   }
 
+  const blockingNames = out.blockingTriggerNames;
+  if (out.blockingTriggerId !== undefined && blockingNames !== undefined) {
+    throw new Error(`Tag "${tagName}" cannot specify both blockingTriggerId and blockingTriggerNames.`);
+  }
   if (Array.isArray(blockingNames)) {
-    const resolved: string[] = [];
-    for (const n of blockingNames) {
-      if (typeof n !== "string" || !n.trim()) continue;
-      const id = triggerNameToId.get(lower(n));
-      if (!id) {
-        throw new Error(`Tag "${displayEntityName(out.name)}" references missing blocking trigger by name: "${n}"`);
-      }
-      resolved.push(id);
-    }
-    out.blockingTriggerId = resolved;
+    out.blockingTriggerId = resolveTriggerIds(tagName, blockingNames, triggerNameToId, "blocking trigger");
     delete out.blockingTriggerNames;
   }
 
   return out;
+}
+
+function resolveTriggerIds(
+  entityName: string,
+  triggerNames: unknown[],
+  triggerNameToId: Map<string, string>,
+  triggerLabel: string
+): string[] {
+  const resolved: string[] = [];
+  for (const rawName of triggerNames) {
+    if (typeof rawName !== "string" || !rawName.trim()) {
+      continue;
+    }
+    const triggerId = triggerNameToId.get(lower(rawName));
+    if (!triggerId) {
+      throw new Error(`Tag "${entityName}" references missing ${triggerLabel} by name: "${rawName}"`);
+    }
+    resolved.push(triggerId);
+  }
+  return resolved;
 }
 
 function zoneWithResolvedCustomEvalTriggers(
@@ -297,7 +302,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.environments.created.push(de.name);
       if (!options.dryRun) {
-        await gtm.createEnvironment(containerPath, de as unknown as GtmEnvironment);
+        await gtm.createEnvironment(containerPath, de as GtmEnvironment);
       }
       continue;
     }
@@ -319,9 +324,9 @@ export async function syncWorkspace(
         throw new Error(`Cannot update environment "${de.name}" (missing path).`);
       }
       const merged = mergeDesiredIntoCurrent(existing, de);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmEnvironment;
+      const body = stripDynamicFieldsDeep(merged) as GtmEnvironment;
       const fingerprint = existing.fingerprint ?? undefined;
-      await gtm.updateEnvironment(envPath, body as unknown as GtmEnvironment, fingerprint ? { fingerprint } : {});
+      await gtm.updateEnvironment(envPath, body, fingerprint ? { fingerprint } : {});
     }
   }
 
@@ -394,7 +399,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.templates.created.push(dt.name);
       if (!options.dryRun) {
-        await gtm.createTemplate(workspacePath, dt as unknown as GtmCustomTemplate);
+        await gtm.createTemplate(workspacePath, dt as GtmCustomTemplate);
       }
       continue;
     }
@@ -415,16 +420,16 @@ export async function syncWorkspace(
         throw new Error(`Cannot update template "${dt.name}" (missing path/templateId).`);
       }
       const merged = mergeDesiredIntoCurrent(existing, dt);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmCustomTemplate;
+      const body = stripDynamicFieldsDeep(merged) as GtmCustomTemplate;
       // Prefer path if present.
       const fingerprint = existing.fingerprint ?? undefined;
       if (existing.path) {
-        await gtm.updateTemplate(existing.path, body as unknown as GtmCustomTemplate, fingerprint ? { fingerprint } : {});
+        await gtm.updateTemplate(existing.path, body, fingerprint ? { fingerprint } : {});
       } else {
         await gtm.updateTemplateById(
           workspacePath,
           existing.templateId!,
-          body as unknown as GtmCustomTemplate,
+          body,
           fingerprint ? { fingerprint } : {}
         );
       }
@@ -482,7 +487,7 @@ export async function syncWorkspace(
       res.variables.created.push(dv.name);
       availableVariableNames.add(key);
       if (!options.dryRun) {
-        const created = await gtm.createVariable(workspacePath, dv as unknown as GtmVariable);
+        const created = await gtm.createVariable(workspacePath, dv as GtmVariable);
         if (created.variableId) {
           variableNameToId.set(key, created.variableId);
         }
@@ -504,12 +509,12 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.variableId) throw new Error(`Cannot update variable "${dv.name}" (missing variableId).`);
       const merged = mergeDesiredIntoCurrent(existing, dv);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmVariable;
+      const body = stripDynamicFieldsDeep(merged) as GtmVariable;
       const fingerprint = existing.fingerprint ?? undefined;
       const updated = await gtm.updateVariableById(
         workspacePath,
         existing.variableId,
-        body as unknown as GtmVariable,
+        body,
         fingerprint ? { fingerprint } : {}
       );
       if (updated.variableId) {
@@ -619,7 +624,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.clients.created.push(dc.name);
       if (!options.dryRun) {
-        await gtm.createClient(workspacePath, dc as unknown as GtmServerClient);
+        await gtm.createClient(workspacePath, dc as GtmServerClient);
       }
       continue;
     }
@@ -638,12 +643,12 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.clientId) throw new Error(`Cannot update client "${dc.name}" (missing clientId).`);
       const merged = mergeDesiredIntoCurrent(existing, dc);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmServerClient;
+      const body = stripDynamicFieldsDeep(merged) as GtmServerClient;
       const fingerprint = existing.fingerprint ?? undefined;
       await gtm.updateClientById(
         workspacePath,
         existing.clientId,
-        body as unknown as GtmServerClient,
+        body,
         fingerprint ? { fingerprint } : {}
       );
     }
@@ -686,7 +691,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.transformations.created.push(dt.name);
       if (!options.dryRun) {
-        await gtm.createTransformation(workspacePath, dt as unknown as GtmServerTransformation);
+        await gtm.createTransformation(workspacePath, dt as GtmServerTransformation);
       }
       continue;
     }
@@ -707,12 +712,12 @@ export async function syncWorkspace(
         throw new Error(`Cannot update transformation "${dt.name}" (missing transformationId).`);
       }
       const merged = mergeDesiredIntoCurrent(existing, dt);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmServerTransformation;
+      const body = stripDynamicFieldsDeep(merged) as GtmServerTransformation;
       const fingerprint = existing.fingerprint ?? undefined;
       await gtm.updateTransformationById(
         workspacePath,
         existing.transformationId,
-        body as unknown as GtmServerTransformation,
+        body,
         fingerprint ? { fingerprint } : {}
       );
     }
@@ -760,7 +765,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.triggers.created.push(dt.name);
       if (!options.dryRun) {
-        const created = await gtm.createTrigger(workspacePath, dt as unknown as GtmTrigger);
+        const created = await gtm.createTrigger(workspacePath, dt as GtmTrigger);
         if (created.triggerId) {
           triggerNameToId.set(key, created.triggerId);
         }
@@ -782,12 +787,12 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.triggerId) throw new Error(`Cannot update trigger "${dt.name}" (missing triggerId).`);
       const merged = mergeDesiredIntoCurrent(existing, dt);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmTrigger;
+      const body = stripDynamicFieldsDeep(merged) as GtmTrigger;
       const fingerprint = existing.fingerprint ?? undefined;
       const updated = await gtm.updateTriggerById(
         workspacePath,
         existing.triggerId,
-        body as unknown as GtmTrigger,
+        body,
         fingerprint ? { fingerprint } : {}
       );
       if (updated.triggerId) {
@@ -828,7 +833,7 @@ export async function syncWorkspace(
   }
 
   for (const rawDesiredZone of desired.zones) {
-    const desiredZoneResolved = zoneWithResolvedCustomEvalTriggers(rawDesiredZone as unknown, triggerNameToId);
+    const desiredZoneResolved = zoneWithResolvedCustomEvalTriggers(rawDesiredZone, triggerNameToId);
     const name = isRecord(desiredZoneResolved) ? desiredZoneResolved.name : undefined;
     if (typeof name !== "string" || !name.trim()) {
       throw new Error("Desired zone missing a valid name.");
@@ -840,7 +845,7 @@ export async function syncWorkspace(
     if (!existing) {
       res.zones.created.push(name);
       if (!options.dryRun) {
-        await gtm.createZone(workspacePath, stripDynamicFieldsDeep(desiredZoneResolved) as unknown as GtmZone);
+        await gtm.createZone(workspacePath, stripDynamicFieldsDeep(desiredZoneResolved) as GtmZone);
       }
       continue;
     }
@@ -850,7 +855,7 @@ export async function syncWorkspace(
       continue;
     }
 
-    if (!shouldUpdate(zoneWithResolvedCustomEvalTriggers(existing as unknown, triggerNameToId), desiredZoneResolved)) {
+    if (!shouldUpdate(zoneWithResolvedCustomEvalTriggers(existing, triggerNameToId), desiredZoneResolved)) {
       res.zones.skipped.push(name);
       continue;
     }
@@ -859,9 +864,9 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.zoneId) throw new Error(`Cannot update zone "${name}" (missing zoneId).`);
       const merged = mergeDesiredIntoCurrent(existing, desiredZoneResolved);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmZone;
+      const body = stripDynamicFieldsDeep(merged) as GtmZone;
       const fingerprint = existing.fingerprint ?? undefined;
-      await gtm.updateZoneById(workspacePath, existing.zoneId, body as unknown as GtmZone, fingerprint ? { fingerprint } : {});
+      await gtm.updateZoneById(workspacePath, existing.zoneId, body, fingerprint ? { fingerprint } : {});
     }
   }
 
@@ -925,7 +930,7 @@ export async function syncWorkspace(
   }
 
   for (const rawDesiredTag of desired.tags) {
-    const desiredTagResolved = tagWithResolvedTriggers(rawDesiredTag as unknown, triggerNameToId);
+    const desiredTagResolved = tagWithResolvedTriggers(rawDesiredTag, triggerNameToId);
     const name = isRecord(desiredTagResolved) ? desiredTagResolved.name : undefined;
     if (typeof name !== "string" || !name.trim()) {
       throw new Error("Desired tag missing a valid name.");
@@ -944,7 +949,7 @@ export async function syncWorkspace(
       if (!options.dryRun) {
         const created = await gtm.createTag(
           workspacePath,
-          stripDynamicFieldsDeep(desiredTagResolved) as unknown as GtmTag
+          stripDynamicFieldsDeep(desiredTagResolved) as GtmTag
         );
         if (created.tagId) {
           tagNameToId.set(key, created.tagId);
@@ -958,7 +963,7 @@ export async function syncWorkspace(
       continue;
     }
 
-    if (!shouldUpdate(tagWithResolvedTriggers(existing as unknown, triggerNameToId), desiredTagResolved)) {
+    if (!shouldUpdate(tagWithResolvedTriggers(existing, triggerNameToId), desiredTagResolved)) {
       res.tags.skipped.push(name);
       continue;
     }
@@ -967,9 +972,9 @@ export async function syncWorkspace(
     if (!options.dryRun) {
       if (!existing.tagId) throw new Error(`Cannot update tag "${name}" (missing tagId).`);
       const merged = mergeDesiredIntoCurrent(existing, desiredTagResolved);
-      const body = stripDynamicFieldsDeep(merged) as unknown as GtmTag;
+      const body = stripDynamicFieldsDeep(merged) as GtmTag;
       const fingerprint = existing.fingerprint ?? undefined;
-      const updated = await gtm.updateTagById(workspacePath, existing.tagId, body as unknown as GtmTag, fingerprint ? { fingerprint } : {});
+      const updated = await gtm.updateTagById(workspacePath, existing.tagId, body, fingerprint ? { fingerprint } : {});
       if (updated.tagId) {
         tagNameToId.set(key, updated.tagId);
       }
@@ -1016,32 +1021,35 @@ export async function syncWorkspace(
     if (!existing) {
       res.folders.created.push(df.name);
       if (!options.dryRun) {
-        const created = await gtm.createFolder(workspacePath, stripDynamicFieldsDeep(df) as unknown as GtmFolder);
+        const created = await gtm.createFolder(workspacePath, stripDynamicFieldsDeep(df) as GtmFolder);
         folderId = created.folderId ?? undefined;
       }
     } else if (!options.updateExisting) {
       res.folders.skipped.push(df.name);
-    } else if (!shouldUpdate(existing, df)) {
-      res.folders.skipped.push(df.name);
     } else {
-      res.folders.updated.push(df.name);
-      if (!options.dryRun) {
-        if (!existing.folderId) throw new Error(`Cannot update folder "${df.name}" (missing folderId).`);
-        const merged = mergeDesiredIntoCurrent(existing, df);
-        const body = stripDynamicFieldsDeep(merged) as unknown as GtmFolder;
-        const fingerprint = existing.fingerprint ?? undefined;
-        const updated = await gtm.updateFolderById(
-          workspacePath,
-          existing.folderId,
-          body as unknown as GtmFolder,
-          fingerprint ? { fingerprint } : {}
-        );
-        folderId = updated.folderId ?? existing.folderId;
+      const needsUpdate = shouldUpdate(existing, df);
+      if (!needsUpdate) {
+        res.folders.skipped.push(df.name);
+      } else {
+        res.folders.updated.push(df.name);
+        if (!options.dryRun) {
+          if (!existing.folderId) throw new Error(`Cannot update folder "${df.name}" (missing folderId).`);
+          const merged = mergeDesiredIntoCurrent(existing, df);
+          const body = stripDynamicFieldsDeep(merged) as GtmFolder;
+          const fingerprint = existing.fingerprint ?? undefined;
+          const updated = await gtm.updateFolderById(
+            workspacePath,
+            existing.folderId,
+            body,
+            fingerprint ? { fingerprint } : {}
+          );
+          folderId = updated.folderId ?? existing.folderId;
+        }
       }
     }
 
     // Apply membership mapping by names, if provided.
-    const members = (df as unknown as { __members?: { tagNames?: string[]; triggerNames?: string[]; variableNames?: string[] } })
+    const members = (df as { __members?: { tagNames?: string[]; triggerNames?: string[]; variableNames?: string[] } })
       .__members;
     const hasMembers =
       Boolean(members?.tagNames?.length) || Boolean(members?.triggerNames?.length) || Boolean(members?.variableNames?.length);

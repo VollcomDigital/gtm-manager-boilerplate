@@ -62,7 +62,7 @@ function mergeByName<T extends { name: string }>(base: T[], overlay: T[]): T[] {
   for (const o of overlay) {
     const key = lower(o.name);
     const existing = map.get(key);
-    map.set(key, (deepMergeObjects(existing ?? {}, o) as unknown) as T);
+    map.set(key, deepMergeObjects(existing ?? {}, o) as T);
   }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -82,6 +82,101 @@ function mergeStringSet(base: string[], overlay: string[]): string[] {
   return [...out.values()].sort((a, b) => a.localeCompare(b));
 }
 
+const WORKSPACE_PROTECTED_KEYS = [
+  "builtInVariableTypes",
+  "environments",
+  "folders",
+  "clients",
+  "transformations",
+  "tags",
+  "triggers",
+  "variables",
+  "templates",
+  "zones"
+] as const;
+
+const WORKSPACE_LIST_KEYS = [
+  "environments",
+  "folders",
+  "clients",
+  "transformations",
+  "tags",
+  "triggers",
+  "variables",
+  "templates",
+  "zones"
+] as const;
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((v): v is string => typeof v === "string");
+}
+
+function mergeWorkspaceBuiltInTypes(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+  out: Record<string, unknown>
+): void {
+  if (!Array.isArray(overlay.builtInVariableTypes)) {
+    return;
+  }
+  out.builtInVariableTypes = mergeStringSet(
+    toStringArray(base.builtInVariableTypes),
+    toStringArray(overlay.builtInVariableTypes)
+  );
+}
+
+function mergeWorkspacePolicy(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+  out: Record<string, unknown>
+): void {
+  if (!isRecord(overlay.policy)) {
+    return;
+  }
+  const basePolicy = isRecord(base.policy) ? base.policy : {};
+  const overlayPolicy = overlay.policy;
+  const baseProtected = isRecord(basePolicy.protectedNames) ? basePolicy.protectedNames : {};
+  const overlayProtected = isRecord(overlayPolicy.protectedNames) ? overlayPolicy.protectedNames : {};
+
+  const mergedProtected: Record<string, unknown> = {};
+  for (const key of WORKSPACE_PROTECTED_KEYS) {
+    mergedProtected[key] = mergeStringSet(toStringArray(baseProtected[key]), toStringArray(overlayProtected[key]));
+  }
+
+  const policy: Record<string, unknown> = { protectedNames: mergedProtected };
+  if (Array.isArray(overlayPolicy.deleteAllowTypes)) {
+    policy.deleteAllowTypes = mergeStringSet(
+      toStringArray(basePolicy.deleteAllowTypes),
+      toStringArray(overlayPolicy.deleteAllowTypes)
+    );
+  }
+  if (Array.isArray(overlayPolicy.deleteDenyTypes)) {
+    policy.deleteDenyTypes = mergeStringSet(
+      toStringArray(basePolicy.deleteDenyTypes),
+      toStringArray(overlayPolicy.deleteDenyTypes)
+    );
+  }
+  out.policy = policy;
+}
+
+function mergeWorkspaceNamedLists(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+  out: Record<string, unknown>
+): void {
+  for (const listKey of WORKSPACE_LIST_KEYS) {
+    const overlayList = overlay[listKey];
+    if (!Array.isArray(overlayList)) {
+      continue;
+    }
+    const baseList = Array.isArray(base[listKey]) ? base[listKey] : [];
+    out[listKey] = mergeByName(baseList as Array<{ name: string }>, overlayList as Array<{ name: string }>);
+  }
+}
+
 function mergeWorkspace(base: unknown, overlay: unknown): unknown {
   if (!isRecord(base) || !isRecord(overlay)) return overlay;
 
@@ -92,74 +187,9 @@ function mergeWorkspace(base: unknown, overlay: unknown): unknown {
     out.workspaceName = overlay.workspaceName;
   }
 
-  // builtInVariableTypes: union/merge if provided
-  if (Array.isArray(overlay.builtInVariableTypes)) {
-    const baseList = Array.isArray(base.builtInVariableTypes) ? (base.builtInVariableTypes as unknown[]) : [];
-    const overlayList = overlay.builtInVariableTypes as unknown[];
-    out.builtInVariableTypes = mergeStringSet(
-      baseList.filter((v): v is string => typeof v === "string"),
-      overlayList.filter((v): v is string => typeof v === "string")
-    );
-  }
-
-  // policy.protectedNames: union/merge if provided
-  if (isRecord(overlay.policy)) {
-    const basePolicy = isRecord(base.policy) ? base.policy : {};
-    const overlayPolicy = overlay.policy;
-
-    const baseProtected = isRecord(basePolicy.protectedNames) ? basePolicy.protectedNames : {};
-    const overlayProtected = isRecord(overlayPolicy.protectedNames) ? overlayPolicy.protectedNames : {};
-
-    const keys = [
-      "builtInVariableTypes",
-      "environments",
-      "folders",
-      "clients",
-      "transformations",
-      "tags",
-      "triggers",
-      "variables",
-      "templates",
-      "zones"
-    ] as const;
-
-    const mergedProtected: Record<string, unknown> = {};
-    for (const k of keys) {
-      const b = Array.isArray(baseProtected[k]) ? (baseProtected[k] as unknown[]) : [];
-      const o = Array.isArray(overlayProtected[k]) ? (overlayProtected[k] as unknown[]) : [];
-      mergedProtected[k] = mergeStringSet(
-        b.filter((v): v is string => typeof v === "string"),
-        o.filter((v): v is string => typeof v === "string")
-      );
-    }
-
-    out.policy = { protectedNames: mergedProtected };
-    if (Array.isArray(overlayPolicy.deleteAllowTypes)) {
-      const b = Array.isArray(basePolicy.deleteAllowTypes) ? (basePolicy.deleteAllowTypes as unknown[]) : [];
-      const o = overlayPolicy.deleteAllowTypes as unknown[];
-      (out.policy as Record<string, unknown>).deleteAllowTypes = mergeStringSet(
-        b.filter((v): v is string => typeof v === "string"),
-        o.filter((v): v is string => typeof v === "string")
-      );
-    }
-    if (Array.isArray(overlayPolicy.deleteDenyTypes)) {
-      const b = Array.isArray(basePolicy.deleteDenyTypes) ? (basePolicy.deleteDenyTypes as unknown[]) : [];
-      const o = overlayPolicy.deleteDenyTypes as unknown[];
-      (out.policy as Record<string, unknown>).deleteDenyTypes = mergeStringSet(
-        b.filter((v): v is string => typeof v === "string"),
-        o.filter((v): v is string => typeof v === "string")
-      );
-    }
-  }
-
-  // Lists: merge by name if provided
-  for (const listKey of ["environments", "folders", "clients", "transformations", "tags", "triggers", "variables", "templates", "zones"] as const) {
-    const oList = overlay[listKey];
-    if (!Array.isArray(oList)) continue;
-
-    const bList = Array.isArray(base[listKey]) ? (base[listKey] as unknown[]) : [];
-    out[listKey] = mergeByName(bList as Array<{ name: string }>, oList as Array<{ name: string }>);
-  }
+  mergeWorkspaceBuiltInTypes(base, overlay, out);
+  mergeWorkspacePolicy(base, overlay, out);
+  mergeWorkspaceNamedLists(base, overlay, out);
 
   return out;
 }
@@ -171,16 +201,20 @@ function mergeContainer(base: RepoContainerPartial, overlay: RepoContainerPartia
   merged.description = overlay.description ?? base.description;
 
   // labels: merge map
-  merged.labels = {
-    ...(base.labels ?? {}),
-    ...(overlay.labels ?? {})
-  };
+  if (base.labels || overlay.labels) {
+    merged.labels = {
+      ...(base.labels ?? {}),
+      ...(overlay.labels ?? {})
+    };
+  }
 
   // target: shallow merge (overlay wins)
-  merged.target = {
-    ...(base.target ?? {}),
-    ...(overlay.target ?? {})
-  };
+  if (base.target || overlay.target) {
+    merged.target = {
+      ...(base.target ?? {}),
+      ...(overlay.target ?? {})
+    };
+  }
 
   // workspace: merge by entity name
   if (base.workspace && overlay.workspace) {
@@ -222,8 +256,11 @@ function finalizeRepoConfig(partial: { defaults?: { workspaceName?: string }; co
   const workspaceNameDefault = partial.defaults?.workspaceName ?? "iac";
 
   const containers: RepoContainer[] = partial.containers.map((c) => {
+    const workspaceOverlay = isRecord(c.workspace) ? c.workspace : {};
     const workspaceName =
-      (c.workspace as unknown as { workspaceName?: string } | undefined)?.workspaceName ?? workspaceNameDefault;
+      typeof workspaceOverlay.workspaceName === "string" && workspaceOverlay.workspaceName.trim().length > 0
+        ? workspaceOverlay.workspaceName
+        : workspaceNameDefault;
 
     // Build final container record:
     const container: unknown = {
@@ -233,18 +270,19 @@ function finalizeRepoConfig(partial: { defaults?: { workspaceName?: string }; co
       target: c.target,
       workspace: {
         workspaceName,
-        policy: (c.workspace as unknown as { policy?: unknown } | undefined)?.policy,
-        builtInVariableTypes:
-          (c.workspace as unknown as { builtInVariableTypes?: unknown[] } | undefined)?.builtInVariableTypes ?? [],
-        environments: (c.workspace as unknown as { environments?: unknown[] } | undefined)?.environments ?? [],
-        folders: (c.workspace as unknown as { folders?: unknown[] } | undefined)?.folders ?? [],
-        clients: (c.workspace as unknown as { clients?: unknown[] } | undefined)?.clients ?? [],
-        transformations: (c.workspace as unknown as { transformations?: unknown[] } | undefined)?.transformations ?? [],
-        tags: (c.workspace as unknown as { tags?: unknown[] } | undefined)?.tags ?? [],
-        triggers: (c.workspace as unknown as { triggers?: unknown[] } | undefined)?.triggers ?? [],
-        variables: (c.workspace as unknown as { variables?: unknown[] } | undefined)?.variables ?? [],
-        templates: (c.workspace as unknown as { templates?: unknown[] } | undefined)?.templates ?? [],
-        zones: (c.workspace as unknown as { zones?: unknown[] } | undefined)?.zones ?? []
+        policy: workspaceOverlay.policy,
+        builtInVariableTypes: Array.isArray(workspaceOverlay.builtInVariableTypes)
+          ? workspaceOverlay.builtInVariableTypes
+          : [],
+        environments: Array.isArray(workspaceOverlay.environments) ? workspaceOverlay.environments : [],
+        folders: Array.isArray(workspaceOverlay.folders) ? workspaceOverlay.folders : [],
+        clients: Array.isArray(workspaceOverlay.clients) ? workspaceOverlay.clients : [],
+        transformations: Array.isArray(workspaceOverlay.transformations) ? workspaceOverlay.transformations : [],
+        tags: Array.isArray(workspaceOverlay.tags) ? workspaceOverlay.tags : [],
+        triggers: Array.isArray(workspaceOverlay.triggers) ? workspaceOverlay.triggers : [],
+        variables: Array.isArray(workspaceOverlay.variables) ? workspaceOverlay.variables : [],
+        templates: Array.isArray(workspaceOverlay.templates) ? workspaceOverlay.templates : [],
+        zones: Array.isArray(workspaceOverlay.zones) ? workspaceOverlay.zones : []
       }
     };
 

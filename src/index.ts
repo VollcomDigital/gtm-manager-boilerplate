@@ -66,7 +66,9 @@ async function main(): Promise<void> {
   const triggerName = "All Pages";
   let allPagesTrigger = triggers.find((t) => (t.name ?? "").toLowerCase() === triggerName.toLowerCase());
 
-  if (!allPagesTrigger) {
+  if (allPagesTrigger) {
+    console.log(`Reusing trigger: name=${allPagesTrigger.name ?? "?"}, triggerId=${allPagesTrigger.triggerId ?? "?"}`);
+  } else {
     const triggerPayload: GtmTrigger = {
       name: triggerName,
       type: "PAGEVIEW"
@@ -75,8 +77,6 @@ async function main(): Promise<void> {
 
     allPagesTrigger = await gtm.createTrigger(workspacePath, triggerPayload);
     console.log(`Created trigger: name=${allPagesTrigger.name ?? "?"}, triggerId=${allPagesTrigger.triggerId ?? "?"}`);
-  } else {
-    console.log(`Reusing trigger: name=${allPagesTrigger.name ?? "?"}, triggerId=${allPagesTrigger.triggerId ?? "?"}`);
   }
 
   if (!allPagesTrigger.triggerId) {
@@ -122,9 +122,13 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err: unknown) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  console.error(`Fatal: ${msg}`);
-  process.exitCode = 1;
-});
+void (async () => {
+  try {
+    await main();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Fatal: ${msg}`);
+    process.exitCode = 1;
+  }
+})();
 

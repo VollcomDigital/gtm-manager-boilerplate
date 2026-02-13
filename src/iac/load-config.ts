@@ -118,7 +118,7 @@ function mergeByName<T extends { name: string }>(base: T[], overlay: T[]): T[] {
   for (const o of overlay) {
     const key = lowerName(o.name);
     const existing = map.get(key);
-    map.set(key, (deepMergeObjects(existing ?? {}, o) as unknown) as T);
+    map.set(key, deepMergeObjects(existing ?? {}, o) as T);
   }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -157,6 +157,47 @@ function makeEmptyPolicy(): WorkspaceDesiredState["policy"] {
   };
 }
 
+const PROTECTED_NAME_KEYS: Array<keyof WorkspaceDesiredState["policy"]["protectedNames"]> = [
+  "builtInVariableTypes",
+  "environments",
+  "folders",
+  "clients",
+  "transformations",
+  "tags",
+  "triggers",
+  "variables",
+  "templates",
+  "zones"
+];
+
+function mergePolicy(
+  base: WorkspaceDesiredState["policy"],
+  overlay: WorkspaceDesiredState["policy"]
+): WorkspaceDesiredState["policy"] {
+  const merged = makeEmptyPolicy();
+  for (const key of PROTECTED_NAME_KEYS) {
+    merged.protectedNames[key] = mergeStringSet(base.protectedNames[key], overlay.protectedNames[key]);
+  }
+  merged.deleteAllowTypes = mergeStringSet(base.deleteAllowTypes, overlay.deleteAllowTypes);
+  merged.deleteDenyTypes = mergeStringSet(base.deleteDenyTypes, overlay.deleteDenyTypes);
+  return merged;
+}
+
+function mergeEntityLists(out: WorkspaceDesiredState, partial: WorkspaceDesiredStatePartial): void {
+  if (partial.builtInVariableTypes) {
+    out.builtInVariableTypes = mergeStringSet(out.builtInVariableTypes, partial.builtInVariableTypes);
+  }
+  if (partial.environments) out.environments = mergeByName(out.environments, partial.environments);
+  if (partial.folders) out.folders = mergeByName(out.folders, partial.folders);
+  if (partial.clients) out.clients = mergeByName(out.clients, partial.clients);
+  if (partial.transformations) out.transformations = mergeByName(out.transformations, partial.transformations);
+  if (partial.tags) out.tags = mergeByName(out.tags, partial.tags);
+  if (partial.triggers) out.triggers = mergeByName(out.triggers, partial.triggers);
+  if (partial.variables) out.variables = mergeByName(out.variables, partial.variables);
+  if (partial.templates) out.templates = mergeByName(out.templates, partial.templates);
+  if (partial.zones) out.zones = mergeByName(out.zones, partial.zones);
+}
+
 function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): WorkspaceDesiredState {
   const [first, ...rest] = parts;
   if (!first) {
@@ -183,37 +224,9 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
       throw new Error(`workspaceName mismatch across overlays: "${out.workspaceName}" vs "${p.workspaceName}"`);
     }
     if (p.policy) {
-      const b = out.policy.protectedNames;
-      const o = p.policy.protectedNames;
-      b.builtInVariableTypes = mergeStringSet(b.builtInVariableTypes, o.builtInVariableTypes);
-      b.environments = mergeStringSet(b.environments, o.environments);
-      b.folders = mergeStringSet(b.folders, o.folders);
-      b.clients = mergeStringSet(b.clients, o.clients);
-      b.transformations = mergeStringSet(b.transformations, o.transformations);
-      b.tags = mergeStringSet(b.tags, o.tags);
-      b.triggers = mergeStringSet(b.triggers, o.triggers);
-      b.variables = mergeStringSet(b.variables, o.variables);
-      b.templates = mergeStringSet(b.templates, o.templates);
-      b.zones = mergeStringSet(b.zones, o.zones);
-      out.policy.deleteAllowTypes = mergeStringSet(
-        out.policy.deleteAllowTypes,
-        p.policy.deleteAllowTypes
-      ) as WorkspaceDesiredState["policy"]["deleteAllowTypes"];
-      out.policy.deleteDenyTypes = mergeStringSet(
-        out.policy.deleteDenyTypes,
-        p.policy.deleteDenyTypes
-      ) as WorkspaceDesiredState["policy"]["deleteDenyTypes"];
+      out.policy = mergePolicy(out.policy, p.policy);
     }
-    if (p.builtInVariableTypes) out.builtInVariableTypes = mergeStringSet(out.builtInVariableTypes, p.builtInVariableTypes);
-    if (p.environments) out.environments = mergeByName(out.environments, p.environments);
-    if (p.folders) out.folders = mergeByName(out.folders, p.folders);
-    if (p.clients) out.clients = mergeByName(out.clients, p.clients);
-    if (p.transformations) out.transformations = mergeByName(out.transformations, p.transformations);
-    if (p.tags) out.tags = mergeByName(out.tags, p.tags);
-    if (p.triggers) out.triggers = mergeByName(out.triggers, p.triggers);
-    if (p.variables) out.variables = mergeByName(out.variables, p.variables);
-    if (p.templates) out.templates = mergeByName(out.templates, p.templates);
-    if (p.zones) out.zones = mergeByName(out.zones, p.zones);
+    mergeEntityLists(out, p);
   }
 
   return out;
