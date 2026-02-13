@@ -28,7 +28,7 @@ const EnvSchema = z
     message: "Provide GTM_CONTAINER_ID (preferred) or GTM_CONTAINER_NAME."
   });
 
-async function main(): Promise<void> {
+async function runExampleMain(): Promise<void> {
   const env = EnvSchema.parse(process.env);
 
   const auth = createGoogleAuth();
@@ -122,11 +122,15 @@ async function main(): Promise<void> {
   );
 }
 
+function main(): void {
+  void runExampleMain();
+}
+
 process.on("unhandledRejection", (err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err);
   console.error(`Fatal: ${msg}`);
   process.exitCode = 1;
 });
 
-void main();
+main();
 

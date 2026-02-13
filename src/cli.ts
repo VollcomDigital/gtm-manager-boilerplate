@@ -1210,8 +1210,8 @@ async function hashConfig(configPath: string, asJson: boolean): Promise<void> {
   }
 }
 
-async function main(): Promise<void> {
-  await mainInternal();
+function main(): void {
+  void mainInternal();
 }
 
 async function mainInternal(): Promise<void> {
@@ -1219,6 +1219,10 @@ async function mainInternal(): Promise<void> {
 }
 
 async function runCommandLine(): Promise<void> {
+  await runCommandLineCore();
+}
+
+async function runCommandLineCore(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
   if (!parsed.command || parsed.flags.help === true) {
     printHelp();
@@ -1873,5 +1877,5 @@ process.on("unhandledRejection", (err: unknown) => {
   process.exitCode = 1;
 });
 
-void main();
+main();
 

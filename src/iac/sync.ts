@@ -254,6 +254,15 @@ async function syncWorkspaceCore(
   desired: WorkspaceDesiredState,
   options: SyncWorkspaceOptions
 ): Promise<SyncWorkspaceResult> {
+  return await syncWorkspaceEngine(gtm, workspacePath, desired, options);
+}
+
+async function syncWorkspaceEngine(
+  gtm: GtmClient,
+  workspacePath: string,
+  desired: WorkspaceDesiredState,
+  options: SyncWorkspaceOptions
+): Promise<SyncWorkspaceResult> {
   ensureUniqueNames(desired.environments, "environment");
   ensureUniqueNames(desired.templates, "template");
   ensureUniqueNames(desired.variables, "variable");
