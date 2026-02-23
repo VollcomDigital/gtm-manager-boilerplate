@@ -100,14 +100,20 @@ The hook set covers linting and formatting via Ruff (including import sorting an
 ```text
 .
 |-- .dockerignore
+|-- .editorconfig
 |-- .gitignore
 |-- .pre-commit-config.yaml
 |-- .env.example
+|-- CONTRIBUTING.md
 |-- .github/
 |   |-- dependabot.yml
 |   |-- workflows/
 |   |   |-- codeql.yml
-|   |   `-- secret-scanning.yml
+|   |   |-- dependency-review.yml
+|   |   |-- gitleaks.yml
+|   |   |-- semgrep.yml
+|   |   |-- secret-scanning.yml
+|   |   `-- sonarcloud.yml
 |-- Dockerfile
 |-- docker-compose.yml
 |-- pyproject.toml
@@ -288,6 +294,16 @@ Required vars for push-based sync:
 
 ### Releases (optional)
 There is a manual `release` workflow (`workflow_dispatch`) powered by **semantic-release**. It tags releases and updates `CHANGELOG.md` based on Conventional Commits.
+
+### Security automation
+- Dependabot monitors Python (`pip`), Node (`npm`), Docker, and GitHub Actions dependencies.
+- CodeQL scans both Python and JavaScript/TypeScript code.
+- `dependency-review` runs on pull requests to block newly introduced high-severity vulnerable dependencies.
+- `gitleaks` runs on pull requests and pushes to detect committed secrets.
+- `semgrep` runs security-focused static analysis rules on pull requests and pushes.
+- `sonarcloud` runs on pull requests and pushes to `main` when these repository settings are present:
+  - Secret: `SONAR_TOKEN`
+  - Variables: `SONAR_ORGANIZATION`, `SONAR_PROJECT_KEY`
 
 ### Example automation script
 `src/index.ts` demonstrates:
