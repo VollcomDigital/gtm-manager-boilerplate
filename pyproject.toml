@@ -10,13 +10,13 @@ packages = [{ include = "src" }]
 python = "^3.10"
 google-api-python-client = "^2.147.0"
 google-auth = "^2.34.0"
-google-auth-oauthlib = "^1.2.1"
+google-auth-oauthlib = "^1.2.4"
 PyYAML = "^6.0.2"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.19.1"
 pre-commit = "^3.8.0"
-ruff = "^0.14.0"
+ruff = "^0.15.2"
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]
