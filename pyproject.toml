@@ -10,7 +10,7 @@ packages = [{ include = "src" }]
 python = "^3.10"
 google-api-python-client = "^2.147.0"
 google-auth = "^2.34.0"
-google-auth-oauthlib = "^1.2.1"
+google-auth-oauthlib = "^1.2.4"
 PyYAML = "^6.0.2"
 
 [tool.poetry.group.dev.dependencies]
