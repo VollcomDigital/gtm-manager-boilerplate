@@ -4,7 +4,7 @@
   "description": "Public boilerplate for Google Tag Manager (GTM) Infrastructure-as-Code workflows.",
   "license": "MIT",
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24"
+    "node": ">=20"
   },
   "scripts": {
     "build": "rimraf dist && tsc -p tsconfig.json",
