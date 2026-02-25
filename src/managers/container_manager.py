@@ -210,95 +210,46 @@ class ContainerManager:
         Returns:
             Operation summary for each entity type.
         """
-        summary: dict[str, Any] = {
-            "workspacePath": self._workspace_path(account_id, container_id, workspace_id),
-            "variables": _new_entity_summary(),
-            "triggers": _new_entity_summary(),
-            "tags": _new_entity_summary(),
-        }
+        summary = self._new_sync_summary(account_id, container_id, workspace_id)
+        desired_entities = self._extract_desired_entities(desired_state)
 
-        desired_variables = desired_state.get("variables", [])
-        desired_triggers = desired_state.get("triggers", [])
-        desired_tags = desired_state.get("tags", [])
+        self._sync_desired_entities(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_id=workspace_id,
+            desired_entities=desired_entities["variables"],
+            upsert_fn=self.upsert_variable,
+            summary_bucket=summary["variables"],
+            dry_run=dry_run,
+        )
+        self._sync_desired_entities(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_id=workspace_id,
+            desired_entities=desired_entities["triggers"],
+            upsert_fn=self.trigger_manager.upsert_trigger,
+            summary_bucket=summary["triggers"],
+            dry_run=dry_run,
+        )
+        self._sync_desired_entities(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_id=workspace_id,
+            desired_entities=desired_entities["tags"],
+            upsert_fn=self.tag_manager.upsert_tag,
+            summary_bucket=summary["tags"],
+            dry_run=dry_run,
+        )
 
-        for variable in desired_variables:
-            action, payload = self.upsert_variable(
-                account_id,
-                container_id,
-                workspace_id,
-                variable,
+        if delete_missing:
+            self._delete_missing_entities(
+                account_id=account_id,
+                container_id=container_id,
+                workspace_id=workspace_id,
+                desired_entities=desired_entities,
+                summary=summary,
                 dry_run=dry_run,
             )
-            _record_summary_action(summary["variables"], action, payload)
-
-        for trigger in desired_triggers:
-            action, payload = self.trigger_manager.upsert_trigger(
-                account_id,
-                container_id,
-                workspace_id,
-                trigger,
-                dry_run=dry_run,
-            )
-            _record_summary_action(summary["triggers"], action, payload)
-
-        for tag in desired_tags:
-            action, payload = self.tag_manager.upsert_tag(
-                account_id,
-                container_id,
-                workspace_id,
-                tag,
-                dry_run=dry_run,
-            )
-            _record_summary_action(summary["tags"], action, payload)
-
-        if not delete_missing:
-            return summary
-
-        current = self.get_workspace_snapshot(account_id, container_id, workspace_id)
-        desired_variable_names = {
-            str(entity.get("name", "")).strip() for entity in desired_variables
-        }
-        desired_trigger_names = {str(entity.get("name", "")).strip() for entity in desired_triggers}
-        desired_tag_names = {str(entity.get("name", "")).strip() for entity in desired_tags}
-
-        for variable in current["variables"]:
-            name = str(variable.get("name", "")).strip()
-            if name and name not in desired_variable_names:
-                if self.delete_variable_by_name(
-                    account_id,
-                    container_id,
-                    workspace_id,
-                    name,
-                    dry_run=dry_run,
-                ):
-                    summary["variables"]["deleted"].append(name)
-
-        for trigger in current["triggers"]:
-            name = str(trigger.get("name", "")).strip()
-            if name and name not in desired_trigger_names:
-                if self.trigger_manager.delete_trigger_by_name(
-                    account_id,
-                    container_id,
-                    workspace_id,
-                    name,
-                    dry_run=dry_run,
-                ):
-                    summary["triggers"]["deleted"].append(name)
-
-        for tag in current["tags"]:
-            name = str(tag.get("name", "")).strip()
-            if name and name not in desired_tag_names:
-                if self.tag_manager.delete_tag_by_name(
-                    account_id,
-                    container_id,
-                    workspace_id,
-                    name,
-                    dry_run=dry_run,
-                ):
-                    summary["tags"]["deleted"].append(name)
-
-        for entity_key in ("variables", "triggers", "tags"):
-            summary[entity_key]["deleted"].sort()
 
         return summary
 
@@ -578,6 +529,127 @@ class ContainerManager:
                 break
 
         return variables
+
+    def _new_sync_summary(
+        self,
+        account_id: str,
+        container_id: str,
+        workspace_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "workspacePath": self._workspace_path(account_id, container_id, workspace_id),
+            "variables": _new_entity_summary(),
+            "triggers": _new_entity_summary(),
+            "tags": _new_entity_summary(),
+        }
+
+    def _extract_desired_entities(
+        self,
+        desired_state: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "variables": desired_state.get("variables", []),
+            "triggers": desired_state.get("triggers", []),
+            "tags": desired_state.get("tags", []),
+        }
+
+    def _sync_desired_entities(
+        self,
+        *,
+        account_id: str,
+        container_id: str,
+        workspace_id: str,
+        desired_entities: list[dict[str, Any]],
+        upsert_fn: Any,
+        summary_bucket: dict[str, list[str]],
+        dry_run: bool,
+    ) -> None:
+        for entity in desired_entities:
+            action, payload = upsert_fn(
+                account_id,
+                container_id,
+                workspace_id,
+                entity,
+                dry_run=dry_run,
+            )
+            _record_summary_action(summary_bucket, action, payload)
+
+    def _delete_missing_entities(
+        self,
+        *,
+        account_id: str,
+        container_id: str,
+        workspace_id: str,
+        desired_entities: dict[str, list[dict[str, Any]]],
+        summary: dict[str, Any],
+        dry_run: bool,
+    ) -> None:
+        current = self.get_workspace_snapshot(account_id, container_id, workspace_id)
+        self._delete_missing_for_type(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_id=workspace_id,
+            current_entities=current["variables"],
+            desired_names={
+                str(entity.get("name", "")).strip() for entity in desired_entities["variables"]
+            },
+            delete_fn=self.delete_variable_by_name,
+            summary_bucket=summary["variables"],
+            dry_run=dry_run,
+        )
+        self._delete_missing_for_type(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_id=workspace_id,
+            current_entities=current["triggers"],
+            desired_names={
+                str(entity.get("name", "")).strip() for entity in desired_entities["triggers"]
+            },
+            delete_fn=self.trigger_manager.delete_trigger_by_name,
+            summary_bucket=summary["triggers"],
+            dry_run=dry_run,
+        )
+        self._delete_missing_for_type(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_id=workspace_id,
+            current_entities=current["tags"],
+            desired_names={
+                str(entity.get("name", "")).strip() for entity in desired_entities["tags"]
+            },
+            delete_fn=self.tag_manager.delete_tag_by_name,
+            summary_bucket=summary["tags"],
+            dry_run=dry_run,
+        )
+        for entity_key in ("variables", "triggers", "tags"):
+            summary[entity_key]["deleted"].sort()
+
+    def _delete_missing_for_type(
+        self,
+        *,
+        account_id: str,
+        container_id: str,
+        workspace_id: str,
+        current_entities: list[dict[str, Any]],
+        desired_names: set[str],
+        delete_fn: Any,
+        summary_bucket: dict[str, list[str]],
+        dry_run: bool,
+    ) -> None:
+        for entity in current_entities:
+            name = str(entity.get("name", "")).strip()
+            if (
+                name
+                and name not in desired_names
+                and delete_fn(
+                    account_id,
+                    container_id,
+                    workspace_id,
+                    name,
+                    dry_run=dry_run,
+                )
+            ):
+                summary_bucket["deleted"].append(name)
 
 
 def _new_entity_summary() -> dict[str, list[str]]:
