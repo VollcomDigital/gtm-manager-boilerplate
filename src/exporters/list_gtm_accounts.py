@@ -2,6 +2,7 @@
 """
 List GTM accounts (and optionally containers) using the Tag Manager API.
 """
+
 import argparse
 import json
 import pathlib
@@ -43,9 +44,13 @@ def fetch_containers(service, account_id: str) -> List[Dict]:
     parent = f"accounts/{account_id}"
 
     while True:
-        request = service.accounts().containers().list(
-            parent=parent,
-            pageToken=next_page_token,
+        request = (
+            service.accounts()
+            .containers()
+            .list(
+                parent=parent,
+                pageToken=next_page_token,
+            )
         )
         response = request.execute()
         containers.extend(response.get("container", []))
