@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 ENV POETRY_VERSION=1.8.3 \
     POETRY_VIRTUALENVS_CREATE=false \
@@ -9,7 +9,7 @@ RUN pip install "poetry==${POETRY_VERSION}"
 
 WORKDIR /app
 
-COPY pyproject.toml /app/
+COPY pyproject.toml poetry.lock /app/
 
 RUN poetry install --no-interaction --no-ansi --no-root
 
