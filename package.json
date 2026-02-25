@@ -6,6 +6,15 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "googleapis": {
+      "gaxios": {
+        "glob": {
+          "minimatch": "^9.0.5"
+        }
+      }
+    }
+  },
   "scripts": {
     "build": "rimraf dist && tsc -p tsconfig.json",
     "start": "node dist/index.js",
