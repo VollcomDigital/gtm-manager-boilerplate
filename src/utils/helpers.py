@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -91,6 +92,51 @@ def diff_entities_by_name(
             update.append(name)
 
     return {"create": create, "update": update, "delete": delete}
+
+
+def prepare_payload(
+    entity: dict[str, Any],
+    *,
+    read_only_fields: Iterable[str],
+) -> dict[str, Any]:
+    """Return a payload with read-only fields removed.
+
+    Args:
+        entity: Raw GTM entity payload.
+        read_only_fields: Field names to drop before upsert.
+
+    Returns:
+        A deep-copied payload without read-only fields.
+    """
+    payload = deepcopy(entity)
+    for field in read_only_fields:
+        payload.pop(field, None)
+    return payload
+
+
+def is_effectively_equal(
+    current: dict[str, Any],
+    desired: dict[str, Any],
+    *,
+    read_only_fields: Iterable[str],
+) -> bool:
+    """Compare entity payloads while ignoring read-only fields.
+
+    Args:
+        current: Current GTM entity payload from the API.
+        desired: Desired GTM entity payload from configuration.
+        read_only_fields: Field names ignored during comparison.
+
+    Returns:
+        True when the canonicalized payloads match.
+    """
+    return canonicalize_for_diff(
+        current,
+        read_only_fields=read_only_fields,
+    ) == canonicalize_for_diff(
+        desired,
+        read_only_fields=read_only_fields,
+    )
 
 
 def _index_by_name(entities: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from ..utils.helpers import canonicalize_for_diff
+from ..utils.helpers import is_effectively_equal, prepare_payload
 
 READ_ONLY_TRIGGER_FIELDS = {
     "accountId",
@@ -82,7 +82,7 @@ class TriggerManager:
         workspace_path = (
             f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
         )
-        desired_payload = _prepare_payload(trigger, read_only_fields=READ_ONLY_TRIGGER_FIELDS)
+        desired_payload = prepare_payload(trigger, read_only_fields=READ_ONLY_TRIGGER_FIELDS)
         existing = self._find_trigger_by_name(workspace_path, name)
 
         if not existing:
@@ -98,7 +98,7 @@ class TriggerManager:
             )
             return "created", created
 
-        if _is_effectively_equal(existing, desired_payload):
+        if is_effectively_equal(existing, desired_payload, read_only_fields=READ_ONLY_TRIGGER_FIELDS):
             return "noop", existing
 
         if dry_run:
@@ -198,18 +198,3 @@ class TriggerManager:
         return triggers
 
 
-def _is_effectively_equal(current: dict[str, Any], desired: dict[str, Any]) -> bool:
-    return canonicalize_for_diff(
-        current,
-        read_only_fields=READ_ONLY_TRIGGER_FIELDS,
-    ) == canonicalize_for_diff(
-        desired,
-        read_only_fields=READ_ONLY_TRIGGER_FIELDS,
-    )
-
-
-def _prepare_payload(trigger: dict[str, Any], *, read_only_fields: set[str]) -> dict[str, Any]:
-    payload = deepcopy(trigger)
-    for field in read_only_fields:
-        payload.pop(field, None)
-    return payload

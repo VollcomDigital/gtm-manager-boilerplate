@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from ..utils.helpers import canonicalize_for_diff, diff_entities_by_name
+from ..utils.helpers import canonicalize_for_diff, diff_entities_by_name, prepare_payload
 from .tag_manager import TagManager
 from .trigger_manager import TriggerManager
 
@@ -299,7 +299,7 @@ class ContainerManager:
             raise ValueError("Variable payload must include a non-empty 'name'.")
 
         workspace_path = self._workspace_path(account_id, container_id, workspace_id)
-        desired_payload = _prepare_payload(variable, read_only_fields=READ_ONLY_VARIABLE_FIELDS)
+        desired_payload = prepare_payload(variable, read_only_fields=READ_ONLY_VARIABLE_FIELDS)
         existing = self._find_variable_by_name(workspace_path, variable_name)
 
         if not existing:
@@ -589,12 +589,10 @@ class ContainerManager:
             account_id=account_id,
             container_id=container_id,
             workspace_id=workspace_id,
-            current_entities=current["variables"],
-            desired_names={
-                str(entity.get("name", "")).strip() for entity in desired_entities["variables"]
-            },
-            delete_fn=self.delete_variable_by_name,
-            summary_bucket=summary["variables"],
+            current_entities=current["tags"],
+            desired_names={str(entity.get("name", "")).strip() for entity in desired_entities["tags"]},
+            delete_fn=self.tag_manager.delete_tag_by_name,
+            summary_bucket=summary["tags"],
             dry_run=dry_run,
         )
         self._delete_missing_for_type(
@@ -613,15 +611,15 @@ class ContainerManager:
             account_id=account_id,
             container_id=container_id,
             workspace_id=workspace_id,
-            current_entities=current["tags"],
+            current_entities=current["variables"],
             desired_names={
-                str(entity.get("name", "")).strip() for entity in desired_entities["tags"]
+                str(entity.get("name", "")).strip() for entity in desired_entities["variables"]
             },
-            delete_fn=self.tag_manager.delete_tag_by_name,
-            summary_bucket=summary["tags"],
+            delete_fn=self.delete_variable_by_name,
+            summary_bucket=summary["variables"],
             dry_run=dry_run,
         )
-        for entity_key in ("variables", "triggers", "tags"):
+        for entity_key in ("tags", "triggers", "variables"):
             summary[entity_key]["deleted"].sort()
 
     def _delete_missing_for_type(
@@ -674,8 +672,3 @@ def _record_summary_action(
         entity_summary[key].sort()
 
 
-def _prepare_payload(entity: dict[str, Any], *, read_only_fields: set[str]) -> dict[str, Any]:
-    payload = deepcopy(entity)
-    for field in read_only_fields:
-        payload.pop(field, None)
-    return payload
