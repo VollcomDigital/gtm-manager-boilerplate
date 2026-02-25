@@ -25,8 +25,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install
-        run: npm ci
+      - name: Bootstrap Node + Python dependencies
+        run: bash scripts/bootstrap_ci.sh
 
       - name: Typecheck
         run: npm run typecheck
@@ -36,14 +36,6 @@ jobs:
 
       - name: Test
         run: npm test
-
-      - name: Setup Poetry
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install poetry
-
-      - name: Install Python dependencies
-        run: poetry install --with dev
 
       - name: Python lint
         run: poetry run ruff check src tests

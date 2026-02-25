@@ -4,19 +4,15 @@ Thanks for contributing to this repository.
 
 ## Development setup
 
-1. Install Node dependencies:
+1. Bootstrap Node + Python dependencies in one command:
 
    ```bash
-   npm ci
+   bash scripts/bootstrap_ci.sh
    ```
 
-2. Install Python dependencies:
+   This runs `npm ci` and `poetry install --with dev`, and reuses lockfile-hash stamps under `.cache/bootstrap/` to skip unchanged reinstalls.
 
-   ```bash
-   poetry install
-   ```
-
-3. Install pre-commit hooks:
+2. Install pre-commit hooks:
 
    ```bash
    poetry run pre-commit install

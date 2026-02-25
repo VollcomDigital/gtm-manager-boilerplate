@@ -16,6 +16,7 @@
     }
   },
   "scripts": {
+    "bootstrap": "bash scripts/bootstrap_ci.sh",
     "build": "rimraf dist && tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",

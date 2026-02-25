@@ -10,7 +10,18 @@ Public boilerplate for managing Google Tag Manager (GTM) containers and tags acr
 
 ## Getting started
 ```bash
-poetry install
+bash scripts/bootstrap_ci.sh
+```
+
+This bootstrap command installs both Node and Python development dependencies:
+- `npm ci`
+- `poetry install --with dev`
+
+It also keeps lockfile-hash stamps under `.cache/bootstrap/` so repeated startup runs skip unchanged dependency installs.
+
+Equivalent npm shortcut:
+```bash
+npm run bootstrap
 ```
 
 ### Running the exporter
@@ -96,7 +107,7 @@ For direct IDs, omit `GTM_TARGET_KEY` and set `GTM_ACCOUNT_ID` and `GTM_CONTAINE
 - `GTM_OUTPUT_PATH` (defaults to `/app/data/exports/ga4_tags.csv`)
 
 ## Pre-commit hooks
-Install hooks after `poetry install`:
+Install hooks after bootstrap (`bash scripts/bootstrap_ci.sh`):
 ```bash
 poetry run pre-commit install
 poetry run pre-commit run --all-files
