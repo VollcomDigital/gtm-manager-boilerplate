@@ -113,7 +113,7 @@ The hook set covers linting and formatting via Ruff (including import sorting an
 |   |   |-- gitleaks.yml
 |   |   |-- semgrep.yml
 |   |   |-- secret-scanning.yml
-|   |   `-- sonarcloud.yml
+|   |   └── sonarcloud.yml
 |-- Dockerfile
 |-- docker-compose.yml
 |-- pyproject.toml
