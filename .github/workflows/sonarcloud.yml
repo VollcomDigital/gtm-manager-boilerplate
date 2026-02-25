@@ -1,0 +1,58 @@
+name: sonarcloud
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+    steps:
+      - name: Validate SonarCloud settings
+        id: precheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${SONAR_TOKEN}" && -n "${SONAR_ORGANIZATION}" && -n "${SONAR_PROJECT_KEY}" ]]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "Skipping SonarCloud scan: set SONAR_TOKEN secret and SONAR_ORGANIZATION/SONAR_PROJECT_KEY repository variables."
+          fi
+
+      - name: Checkout
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
+        run: npm ci
+
+      - name: SonarCloud scan
+        if: ${{ steps.precheck.outputs.enabled == 'true' }}
+        uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
+        env:
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
