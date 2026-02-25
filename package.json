@@ -10,7 +10,7 @@
     "googleapis": {
       "gaxios": {
         "glob": {
-          "minimatch": "9.0.5"
+          "minimatch": "^9.0.5"
         }
       }
     }
