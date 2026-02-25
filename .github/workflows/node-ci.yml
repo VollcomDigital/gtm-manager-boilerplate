@@ -37,6 +37,23 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Setup Poetry
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install poetry
+
+      - name: Install Python dependencies
+        run: poetry install --with dev
+
+      - name: Python lint
+        run: poetry run ruff check src tests
+
+      - name: Python typecheck
+        run: poetry run mypy src
+
+      - name: Python tests
+        run: poetry run pytest tests
+
       - name: SonarCloud Scan
         if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@aa36e4843295bec5231b62c4c41e5fcea268ba34 # v5.0.0
