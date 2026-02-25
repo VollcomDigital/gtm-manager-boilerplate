@@ -1,37 +1,57 @@
-# Contributing
+# Contributing Guide
 
-Thank you for considering a contribution to this project. The following guidelines help keep the process smooth and consistent.
+Thanks for contributing to this repository.
 
-## Getting started
+## Development setup
 
-1. Fork the repository and create a feature branch from `main`.
-2. Install dependencies for both stacks:
+1. Install Node dependencies:
+
    ```bash
-   npm install
+   npm ci
+   ```
+
+2. Install Python dependencies:
+
+   ```bash
    poetry install
    ```
-3. Enable pre-commit hooks:
+
+3. Install pre-commit hooks:
+
    ```bash
    poetry run pre-commit install
    ```
 
-## Code style
+## Local quality checks
 
-- **TypeScript**: ESLint enforces style rules (`npm run lint`). Run `npm run typecheck` before pushing.
-- **Python**: Ruff handles linting and formatting. mypy checks types. Pre-commit hooks run both automatically.
-- Follow [Conventional Commits](https://www.conventionalcommits.org/) for all commit messages (`feat:`, `fix:`, `perf:`, `chore:`, etc.).
+Run these before opening a pull request:
 
-## Pull requests
+```bash
+npm run typecheck
+npm run lint
+npm test
+poetry run pre-commit run --all-files
+```
 
-1. Keep PRs focused on a single concern.
-2. Ensure all CI checks pass (typecheck, lint, test).
-3. Add or update tests when changing behavior.
-4. Update `README.md` if your change affects public usage or configuration.
+## Commit conventions
 
-## Reporting issues
+Use semantic commit prefixes to keep history clear:
 
-Use GitHub Issues. Include reproduction steps, expected behavior, and any relevant logs or configuration.
+- `feat:` for new features
+- `fix:` for bug fixes
+- `perf:` for performance improvements
+- `chore:` for maintenance and tooling updates
+- `docs:` for documentation changes
 
-## Security vulnerabilities
+## Security requirements
 
-Please report security issues privately via the GitHub Security tab. See `SECURITY.md` for details.
+- Never commit credentials, API keys, tokens, or private keys.
+- Keep OAuth/service account files outside the repository and reference them via environment variables.
+- Report vulnerabilities through the process documented in `SECURITY.md`.
+
+## Pull request checklist
+
+- Include a clear problem statement and scope.
+- Add or update tests when behavior changes.
+- Ensure CI passes (linting, tests, and security workflows).
+- Update documentation for user-facing changes.
