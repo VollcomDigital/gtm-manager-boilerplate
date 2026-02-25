@@ -34,4 +34,3 @@ test("schema contract: zod schemas accept googleapis-shaped resources", () => {
   assert.equal(zGtmServerClient.parse(clientFromApi).name, "HTTP Client");
   assert.equal(zGtmServerTransformation.parse(transformationFromApi).name, "PII Redact");
 });
-

@@ -101,4 +101,3 @@ export function canonicalizeDeep(value: unknown): unknown {
 export function normalizeForDiff(value: unknown): unknown {
   return canonicalizeDeep(stripDynamicFieldsDeep(value));
 }
-

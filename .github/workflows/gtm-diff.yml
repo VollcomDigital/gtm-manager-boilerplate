@@ -124,4 +124,3 @@ jobs:
             rm -f "${GTM_CREDENTIALS_PATH}"
             echo "Removed fallback service account key file."
           fi
-

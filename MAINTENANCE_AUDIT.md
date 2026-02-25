@@ -3,7 +3,7 @@
 Repository: **gtm-manager-boilerplate**
 Tech stack: TypeScript/Node.js + Python (Poetry), Docker, GitHub Actions
 
----
+______________________________________________________________________
 
 ### Dependency Management with Dependabot
 

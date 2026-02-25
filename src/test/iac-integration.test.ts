@@ -73,4 +73,3 @@ test("integration fixture: syncWorkspace respects protected names + delete type 
   assert.deepEqual(res.tags.skipped, ["Keep Tag"]);
   assert.ok(res.warnings.some((w) => w.includes("Protected tag not deleted")));
 });
-
