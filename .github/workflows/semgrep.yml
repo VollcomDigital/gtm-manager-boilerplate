@@ -1,0 +1,25 @@
+name: semgrep
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches:
+      - main
+      - cursor/**
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Semgrep
+        run: python -m pip install --upgrade semgrep
+
+      - name: Run Semgrep security audit rules
+        run: semgrep --config p/security-audit --error --exclude .github --exclude dist

@@ -104,9 +104,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
-          echo "Wrote gtm-service-account.json"
-          echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
+          umask 077
+          credentials_file="$(mktemp "${RUNNER_TEMP}/gtm-service-account.XXXXXX.json")"
+          printf '%s' "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > "${credentials_file}"
+          echo "Wrote fallback service account key to temporary path."
+          echo "GTM_CREDENTIALS_PATH=${credentials_file}" >> "${GITHUB_ENV}"
 
       - name: Sync workspace
         if: ${{ steps.precheck.outputs.enabled == 'true' }}
@@ -273,6 +275,16 @@ jobs:
             gtm.publish-version.json
             gtm.version-path.txt
 
+      - name: Cleanup fallback service account key
+        if: ${{ always() && steps.precheck.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${GTM_CREDENTIALS_PATH:-}" && -f "${GTM_CREDENTIALS_PATH}" ]]; then
+            rm -f "${GTM_CREDENTIALS_PATH}"
+            echo "Removed fallback service account key file."
+          fi
+
   sync_push:
     runs-on: ubuntu-latest
 
@@ -341,9 +353,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > gtm-service-account.json
-          echo "Wrote gtm-service-account.json"
-          echo "GTM_CREDENTIALS_PATH=${GITHUB_WORKSPACE}/gtm-service-account.json" >> "${GITHUB_ENV}"
+          umask 077
+          credentials_file="$(mktemp "${RUNNER_TEMP}/gtm-service-account.XXXXXX.json")"
+          printf '%s' "${GTM_SERVICE_ACCOUNT_JSON_B64}" | base64 --decode > "${credentials_file}"
+          echo "Wrote fallback service account key to temporary path."
+          echo "GTM_CREDENTIALS_PATH=${credentials_file}" >> "${GITHUB_ENV}"
 
       - name: Sync workspace (push)
         if: ${{ steps.precheck.outputs.enabled == 'true' }}
@@ -418,4 +432,14 @@ jobs:
           md += `\\nTimestamp: \`${new Date().toISOString()}\`\\n`;
           fs.appendFileSync(summaryPath, md);
           NODE
+
+      - name: Cleanup fallback service account key (push)
+        if: ${{ always() && steps.precheck.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${GTM_CREDENTIALS_PATH:-}" && -f "${GTM_CREDENTIALS_PATH}" ]]; then
+            rm -f "${GTM_CREDENTIALS_PATH}"
+            echo "Removed fallback service account key file."
+          fi
 
