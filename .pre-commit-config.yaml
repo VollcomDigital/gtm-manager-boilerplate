@@ -26,4 +26,5 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-requests
+          - types-PyYAML
         args: ["--config-file=pyproject.toml"]

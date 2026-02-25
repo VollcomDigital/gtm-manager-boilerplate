@@ -2,180 +2,39 @@
 """
 Export GA4 tags and parameters from a GTM container's latest version into CSV.
 """
+
 import argparse
 import csv
 import json
-import os
 import pathlib
 import sys
 from typing import Any, Dict, List, Tuple
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import yaml
 
 SRC_ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from utils.auth import get_credentials  # noqa: E402
+from utils.helpers import ensure_output_directory  # noqa: E402
+from utils.targets import (  # noqa: E402
+    DEFAULT_TARGETS_CONFIG,
+    LEGACY_DEFAULT_SALESLINE_CONFIG,
+    resolve_account_and_container,
+)
 
 # GTM read-only scope
 SCOPES = ["https://www.googleapis.com/auth/tagmanager.readonly"]
 
 GA4_EVENT_TYPE = "gaawe"  # GA4 Event
 GA4_CONFIG_TYPE = "gaawc"  # GA4 Configuration
-DEFAULT_TARGETS_CONFIG = "config/targets.yaml"
-LEGACY_DEFAULT_SALESLINE_CONFIG = "config/saleslines.yaml"
-TARGETS_ENV_VAR = "GTM_TARGETS_JSON"
-LEGACY_SALESLINES_ENV_VAR = "GTM_SALESLINES_JSON"
 
 
 def safe_get(data: Dict[str, Any], key: str, default=None):
     """Convenience wrapper for dict.get that safely handles None inputs."""
     return data.get(key, default) if isinstance(data, dict) else default
-
-
-def load_target_mapping(config_path: str | None) -> Dict[str, Dict[str, Any]]:
-    """
-    Load the target-key -> container mapping from YAML or environment variables.
-
-    Returns a dict keyed by target key. Supports optional grouping keys
-    (e.g., "central:") which will be flattened automatically.
-    """
-    mapping = _load_salesline_mapping_from_file(config_path)
-    if mapping is None:
-        mapping = _load_salesline_mapping_from_env()
-
-    if mapping is None:
-        source_hint = config_path or DEFAULT_TARGETS_CONFIG
-        raise FileNotFoundError(
-            "No target mapping found. Provide --config-path, create "
-            f"{source_hint}, or export JSON via {TARGETS_ENV_VAR} "
-            f"(legacy: {LEGACY_SALESLINES_ENV_VAR}).",
-        )
-
-    if not isinstance(mapping, dict):
-        raise ValueError("Target entries must be provided as a mapping.")
-
-    return _normalize_salesline_mapping(mapping)
-
-
-def _resolve_salesline_config_path(config_path: str | None) -> pathlib.Path | None:
-    if config_path:
-        return pathlib.Path(config_path)
-
-    default_targets_path = pathlib.Path(DEFAULT_TARGETS_CONFIG)
-    if default_targets_path.exists():
-        return default_targets_path
-
-    legacy_default_path = pathlib.Path(LEGACY_DEFAULT_SALESLINE_CONFIG)
-    if legacy_default_path.exists():
-        return legacy_default_path
-
-    return None
-
-
-def _load_salesline_mapping_from_file(config_path: str | None) -> Dict[str, Any] | None:
-    path_to_load = _resolve_salesline_config_path(config_path)
-    if not path_to_load or not path_to_load.exists():
-        return None
-
-    with open(path_to_load, "r", encoding="utf-8") as config_file:
-        raw_data = yaml.safe_load(config_file) or {}
-
-    if not isinstance(raw_data, dict):
-        raise ValueError("Target config must be a mapping.")
-
-    return raw_data.get("targets", raw_data.get("saleslines", raw_data))
-
-
-def _load_salesline_mapping_from_env() -> Dict[str, Any] | None:
-    source_env_var = TARGETS_ENV_VAR
-    env_payload = os.getenv(source_env_var)
-    if not env_payload:
-        source_env_var = LEGACY_SALESLINES_ENV_VAR
-        env_payload = os.getenv(source_env_var)
-    if not env_payload:
-        return None
-
-    try:
-        parsed = json.loads(env_payload)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Failed to parse {source_env_var} environment variable as JSON.",
-        ) from exc
-
-    return parsed
-
-
-def _normalize_salesline_mapping(mapping: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    cleaned: Dict[str, Dict[str, Any]] = {}
-
-    for key, value in mapping.items():
-        if not isinstance(value, dict):
-            raise ValueError(f"Target key '{key}' configuration must be a mapping.")
-
-        if {"account_id", "container_id"} <= set(value.keys()):
-            cleaned[key] = {
-                "account_id": value.get("account_id"),
-                "container_id": value.get("container_id"),
-            }
-            continue
-
-        # Allow grouping keys (e.g., central: { ga4: {...}, marketing: {...} })
-        subgroup_added = False
-        for sub_key, sub_value in value.items():
-            if not isinstance(sub_value, dict):
-                continue
-            if {"account_id", "container_id"} <= set(sub_value.keys()):
-                cleaned_key = f"{key}_{sub_key}"
-                cleaned[cleaned_key] = {
-                    "account_id": sub_value.get("account_id"),
-                    "container_id": sub_value.get("container_id"),
-                }
-                subgroup_added = True
-        if subgroup_added:
-            continue
-
-        raise ValueError(
-            f"Target key '{key}' configuration is missing 'account_id'/'container_id' "
-            "and does not contain sub-entries with those fields.",
-        )
-
-    return cleaned
-
-
-def resolve_account_and_container(
-    account_id: str | None,
-    container_id: str | None,
-    target_key: str | None,
-    config_path: str | None,
-) -> Tuple[str, str]:
-    """
-    Resolve account/container identifiers directly or via target-key mapping.
-    """
-    resolved_account = account_id
-    resolved_container = container_id
-
-    if target_key:
-        mapping = load_salesline_mapping(config_path)
-        entry = mapping.get(target_key)
-        if not entry:
-            available = ", ".join(sorted(mapping.keys()))
-            raise ValueError(
-                f"Target key '{target_key}' not found. Available entries: {available or 'none'}",
-            )
-
-        resolved_account = resolved_account or entry.get("account_id")
-        resolved_container = resolved_container or entry.get("container_id")
-
-    if not resolved_account or not resolved_container:
-        raise ValueError(
-            "Provide --account-id and --container-id or specify --target-key/--salesline with a valid mapping.",
-        )
-
-    return str(resolved_account), str(resolved_container)
 
 
 def is_ga4_tag(tag: Dict[str, Any]) -> bool:
@@ -284,13 +143,7 @@ def export_ga4_tags_to_csv(
     Returns the number of GA4 tags exported.
     """
     version_path = f"accounts/{account_id}/containers/{container_id}/versions/latest"
-    response = (
-        service.accounts()
-        .containers()
-        .versions()
-        .latest(path=version_path)
-        .execute()
-    )
+    response = service.accounts().containers().versions().latest(path=version_path).execute()
 
     tags = response.get("tag", []) or []
     ga4_tags = [tag for tag in tags if is_ga4_tag(tag)]
@@ -307,6 +160,7 @@ def export_ga4_tags_to_csv(
         "parameter_value",
     ]
 
+    ensure_output_directory(output_csv)
     with open(output_csv, "w", newline="", encoding="utf-8") as file_handle:
         writer = csv.writer(file_handle)
         writer.writerow(header)
