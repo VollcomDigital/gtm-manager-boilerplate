@@ -24,6 +24,7 @@ _DYNAMIC_FIELDS = {
     "workspaceId",
     "path",
     "fingerprint",
+    "tagManagerUrl",
     "tagId",
     "triggerId",
     "variableId",

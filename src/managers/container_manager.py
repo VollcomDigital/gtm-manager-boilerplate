@@ -586,7 +586,6 @@ class ContainerManager:
 
         return variables
 
-
 def _new_entity_summary() -> dict[str, list[str]]:
     return {"created": [], "updated": [], "deleted": [], "noop": []}
 
