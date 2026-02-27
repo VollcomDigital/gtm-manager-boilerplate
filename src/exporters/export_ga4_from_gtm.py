@@ -10,6 +10,7 @@ import pathlib
 import sys
 from typing import Any, Dict, List, Tuple
 
+import yaml
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -132,11 +133,47 @@ def normalize_value_for_csv(value: Any) -> str:
     return str(value)
 
 
+def fetch_latest_container_version(service, account_id: str, container_id: str) -> Dict[str, Any]:
+    """Return the latest GTM container version payload.
+
+    Args:
+        service: Authenticated GTM API service.
+        account_id: GTM account identifier.
+        container_id: GTM container identifier.
+
+    Returns:
+        Latest version response dictionary.
+    """
+    version_path = f"accounts/{account_id}/containers/{container_id}/versions/latest"
+    return service.accounts().containers().versions().latest(path=version_path).execute()
+
+
+def _resolve_latest_response(
+    service,
+    account_id: str,
+    container_id: str,
+    version_response: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+    if version_response is not None:
+        return version_response
+    return fetch_latest_container_version(service, account_id, container_id)
+
+
+def _extract_generic_parameters(entity: Dict[str, Any]) -> List[Tuple[str, Any]]:
+    params = safe_get(entity, "parameter", []) or []
+    pairs: List[Tuple[str, Any]] = []
+    for param in params:
+        pairs.append((param.get("key", ""), flatten_parameter_value(param)))
+    return pairs
+
+
 def export_ga4_tags_to_csv(
     service,
     account_id: str,
     container_id: str,
     output_csv: str,
+    *,
+    version_response: Dict[str, Any] | None = None,
 ) -> int:
     """
     Pull latest container version, filter GA4 tags, flatten parameters, and write CSV.
@@ -213,10 +250,213 @@ def export_ga4_tags_to_csv(
     return len(ga4_tags)
 
 
+def export_triggers_to_csv(
+    service,
+    account_id: str,
+    container_id: str,
+    output_csv: str,
+    *,
+    version_response: Dict[str, Any] | None = None,
+) -> int:
+    """Export triggers from the latest GTM container version into CSV.
+
+    Args:
+        service: Authenticated GTM API service.
+        account_id: GTM account identifier.
+        container_id: GTM container identifier.
+        output_csv: Destination CSV path.
+        version_response: Optional pre-fetched latest version payload.
+
+    Returns:
+        Number of triggers exported.
+    """
+    response = _resolve_latest_response(service, account_id, container_id, version_response)
+    triggers = response.get("trigger", []) or []
+    version_name = response.get("name", "")
+    header = [
+        "account_id",
+        "container_id",
+        "container_version_name",
+        "trigger_id",
+        "trigger_name",
+        "trigger_type",
+        "parameter_key",
+        "parameter_value",
+    ]
+
+    ensure_output_directory(output_csv)
+    with open(output_csv, "w", newline="", encoding="utf-8") as file_handle:
+        writer = csv.writer(file_handle)
+        writer.writerow(header)
+
+        for trigger in triggers:
+            trigger_id = trigger.get("triggerId", "")
+            trigger_name = trigger.get("name", "")
+            trigger_type = trigger.get("type", "")
+            params = _extract_generic_parameters(trigger)
+
+            if params:
+                for key, value in params:
+                    writer.writerow(
+                        [
+                            account_id,
+                            container_id,
+                            version_name,
+                            trigger_id,
+                            trigger_name,
+                            trigger_type,
+                            key,
+                            normalize_value_for_csv(value),
+                        ],
+                    )
+            else:
+                writer.writerow(
+                    [
+                        account_id,
+                        container_id,
+                        version_name,
+                        trigger_id,
+                        trigger_name,
+                        trigger_type,
+                        "",
+                        "",
+                    ],
+                )
+
+    return len(triggers)
+
+
+def export_variables_to_csv(
+    service,
+    account_id: str,
+    container_id: str,
+    output_csv: str,
+    *,
+    version_response: Dict[str, Any] | None = None,
+) -> int:
+    """Export variables from the latest GTM container version into CSV.
+
+    Args:
+        service: Authenticated GTM API service.
+        account_id: GTM account identifier.
+        container_id: GTM container identifier.
+        output_csv: Destination CSV path.
+        version_response: Optional pre-fetched latest version payload.
+
+    Returns:
+        Number of variables exported.
+    """
+    response = _resolve_latest_response(service, account_id, container_id, version_response)
+    variables = response.get("variable", []) or []
+    version_name = response.get("name", "")
+    header = [
+        "account_id",
+        "container_id",
+        "container_version_name",
+        "variable_id",
+        "variable_name",
+        "variable_type",
+        "parameter_key",
+        "parameter_value",
+    ]
+
+    ensure_output_directory(output_csv)
+    with open(output_csv, "w", newline="", encoding="utf-8") as file_handle:
+        writer = csv.writer(file_handle)
+        writer.writerow(header)
+
+        for variable in variables:
+            variable_id = variable.get("variableId", "")
+            variable_name = variable.get("name", "")
+            variable_type = variable.get("type", "")
+            params = _extract_generic_parameters(variable)
+
+            if params:
+                for key, value in params:
+                    writer.writerow(
+                        [
+                            account_id,
+                            container_id,
+                            version_name,
+                            variable_id,
+                            variable_name,
+                            variable_type,
+                            key,
+                            normalize_value_for_csv(value),
+                        ],
+                    )
+            else:
+                writer.writerow(
+                    [
+                        account_id,
+                        container_id,
+                        version_name,
+                        variable_id,
+                        variable_name,
+                        variable_type,
+                        "",
+                        "",
+                    ],
+                )
+
+    return len(variables)
+
+
+def export_workspace_snapshot_to_json(
+    service,
+    account_id: str,
+    container_id: str,
+    output_json: str,
+    *,
+    include_tags: bool = True,
+    include_triggers: bool = True,
+    include_variables: bool = True,
+    version_response: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Export latest-version entities to a workspace-style JSON snapshot.
+
+    Args:
+        service: Authenticated GTM API service.
+        account_id: GTM account identifier.
+        container_id: GTM container identifier.
+        output_json: Destination JSON path.
+        include_tags: Include tags in snapshot payload.
+        include_triggers: Include triggers in snapshot payload.
+        include_variables: Include variables in snapshot payload.
+        version_response: Optional pre-fetched latest version payload.
+
+    Returns:
+        Snapshot payload that was written to disk.
+    """
+    response = _resolve_latest_response(service, account_id, container_id, version_response)
+    snapshot: Dict[str, Any] = {
+        "account_id": account_id,
+        "container_id": container_id,
+        "container_version_name": response.get("name", ""),
+        "container_version_path": response.get("path", ""),
+    }
+    if include_tags:
+        snapshot["tags"] = response.get("tag", []) or []
+    if include_triggers:
+        snapshot["triggers"] = response.get("trigger", []) or []
+    if include_variables:
+        snapshot["variables"] = response.get("variable", []) or []
+
+    ensure_output_directory(output_json)
+    with open(output_json, "w", encoding="utf-8") as file_handle:
+        json.dump(snapshot, file_handle, indent=2, ensure_ascii=False)
+        file_handle.write("\n")
+
+    return snapshot
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
-        description="Export GA4 tags and parameters from a GTM container to CSV (latest version).",
+        description=(
+            "Export GTM latest-version entities. "
+            "GA4 tag CSV is enabled by default; triggers, variables, and JSON snapshot exports are optional."
+        ),
     )
     parser.add_argument("--account-id", help="GTM Account ID (e.g., 2824463661)")
     parser.add_argument("--container-id", help="GTM Container ID (e.g., 51955729)")
@@ -243,6 +483,23 @@ def parse_args() -> argparse.Namespace:
         help="Output CSV filename (default: ga4_tags.csv)",
     )
     parser.add_argument(
+        "--skip-ga4",
+        action="store_true",
+        help="Skip GA4 tag CSV export.",
+    )
+    parser.add_argument(
+        "--triggers-output",
+        help="Optional CSV path for trigger exports from latest container version.",
+    )
+    parser.add_argument(
+        "--variables-output",
+        help="Optional CSV path for variable exports from latest container version.",
+    )
+    parser.add_argument(
+        "--snapshot-output",
+        help="Optional JSON path for a latest-version snapshot (tags/triggers/variables).",
+    )
+    parser.add_argument(
         "--auth",
         choices=["service", "user", "adc"],
         default="user",
@@ -263,6 +520,13 @@ def main():
     args = parse_args()
 
     try:
+        if args.skip_ga4 and not (
+            args.triggers_output or args.variables_output or args.snapshot_output
+        ):
+            raise ValueError(
+                "--skip-ga4 requires at least one of --triggers-output, --variables-output, or --snapshot-output.",
+            )
+
         credentials = get_credentials(args.auth, args.credentials, SCOPES)
         account_id, container_id = resolve_account_and_container(
             args.account_id,
@@ -271,13 +535,50 @@ def main():
             args.config_path,
         )
         service = build("tagmanager", "v2", credentials=credentials, cache_discovery=False)
-        count = export_ga4_tags_to_csv(
-            service,
-            account_id,
-            container_id,
-            args.output,
-        )
-        print(f"Done. Wrote GA4 tags to {args.output}. GA4 tags found: {count}")
+        latest_version = fetch_latest_container_version(service, account_id, container_id)
+
+        output_messages: List[str] = []
+        if not args.skip_ga4:
+            ga4_count = export_ga4_tags_to_csv(
+                service,
+                account_id,
+                container_id,
+                args.output,
+                version_response=latest_version,
+            )
+            output_messages.append(f"GA4 tags: {ga4_count} -> {args.output}")
+
+        if args.triggers_output:
+            trigger_count = export_triggers_to_csv(
+                service,
+                account_id,
+                container_id,
+                args.triggers_output,
+                version_response=latest_version,
+            )
+            output_messages.append(f"triggers: {trigger_count} -> {args.triggers_output}")
+
+        if args.variables_output:
+            variable_count = export_variables_to_csv(
+                service,
+                account_id,
+                container_id,
+                args.variables_output,
+                version_response=latest_version,
+            )
+            output_messages.append(f"variables: {variable_count} -> {args.variables_output}")
+
+        if args.snapshot_output:
+            export_workspace_snapshot_to_json(
+                service,
+                account_id,
+                container_id,
+                args.snapshot_output,
+                version_response=latest_version,
+            )
+            output_messages.append(f"snapshot -> {args.snapshot_output}")
+
+        print(f"Done. {'; '.join(output_messages)}")
     except HttpError as error:
         print(f"GTM API error: {error}")
         raise

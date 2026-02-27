@@ -28,3 +28,10 @@ repos:
           - types-requests
           - types-PyYAML
         args: ["--config-file=pyproject.toml"]
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: poetry run pytest tests -q
+        language: system
+        pass_filenames: false

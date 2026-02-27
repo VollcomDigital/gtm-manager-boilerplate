@@ -6,6 +6,23 @@ from typing import Any
 
 from utils.google_api import execute_with_retry, list_all_pages
 
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any
+
+from ..utils.helpers import canonicalize_for_diff
+
+READ_ONLY_TAG_FIELDS = {
+    "accountId",
+    "containerId",
+    "workspaceId",
+    "tagId",
+    "path",
+    "fingerprint",
+    "tagManagerUrl",
+}
+
 
 class TagManager:
     """Tag operations (list/create/update/delete)."""
