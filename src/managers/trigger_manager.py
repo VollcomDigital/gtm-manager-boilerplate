@@ -130,7 +130,10 @@ class TriggerManager:
         body = deepcopy(existing)
         for k in READ_ONLY_TRIGGER_FIELDS:
             body.pop(k, None)
-        body.update(desired)
+        cleaned_desired = deepcopy(desired)
+        for k in READ_ONLY_TRIGGER_FIELDS:
+            cleaned_desired.pop(k, None)
+        body.update(cleaned_desired)
 
         fingerprint = existing.get("fingerprint")
         kwargs: dict[str, Any] = {"path": path, "body": body}

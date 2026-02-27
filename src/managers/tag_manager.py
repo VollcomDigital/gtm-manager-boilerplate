@@ -129,7 +129,10 @@ class TagManager:
         body = deepcopy(existing)
         for k in READ_ONLY_TAG_FIELDS:
             body.pop(k, None)
-        body.update(desired)
+        cleaned_desired = deepcopy(desired)
+        for k in READ_ONLY_TAG_FIELDS:
+            cleaned_desired.pop(k, None)
+        body.update(cleaned_desired)
 
         fingerprint = existing.get("fingerprint")
         kwargs: dict[str, Any] = {"path": path, "body": body}

@@ -86,15 +86,16 @@ def export_snapshot_from_workspace(
 ) -> dict[str, Any]:
     """Export tags/triggers/variables from a workspace (by name)."""
     containers = ContainerManager(service)
-    ws = containers.get_or_create_workspace(
+    result = containers.get_or_create_workspace(
         account_id,
         container_id,
         workspace_name,
-        create_if_missing=False,
+        dry_run=True,
     )
-    workspace_id = ws.get("workspaceId")
-    workspace_path = ws.get("path") or (
-        containers.workspace_path(account_id, container_id, str(workspace_id))
+    workspace = result[1] if isinstance(result, tuple) and len(result) == 2 else result
+    workspace_id = workspace.get("workspaceId")
+    workspace_path = workspace.get("path") or (
+        f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
         if workspace_id
         else None
     )
@@ -124,9 +125,9 @@ def export_snapshot_from_workspace(
     return {
         "source": {"type": "workspace", "name": workspace_name, "path": workspace_path},
         "workspace": {
-            "name": ws.get("name"),
-            "workspaceId": ws.get("workspaceId"),
-            "path": ws.get("path"),
+            "name": workspace.get("name"),
+            "workspaceId": workspace.get("workspaceId"),
+            "path": workspace.get("path"),
         },
         "tags": tags,
         "triggers": triggers,

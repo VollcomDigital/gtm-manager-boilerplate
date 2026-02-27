@@ -18,13 +18,17 @@ class _FakeContainerManager:
         container_id: str,
         workspace_name: str,
         *,
-        create_if_missing: bool = True,
+        dry_run: bool = False,
     ):
-        return {
-            "name": workspace_name,
-            "workspaceId": "1",
-            "path": self.workspace_path(account_id, container_id, "1"),
-        }
+        _ = dry_run
+        return (
+            "existing",
+            {
+                "name": workspace_name,
+                "workspaceId": "1",
+                "path": self.workspace_path(account_id, container_id, "1"),
+            },
+        )
 
     def create_container_version_from_workspace(
         self, workspace_path: str, *, name: str | None = None, notes: str | None = None
