@@ -17,4 +17,3 @@ export function sha256HexOfNormalized(value: unknown): string {
   const normalized = normalizeForDiff(value);
   return sha256HexFromString(JSON.stringify(normalized));
 }
-

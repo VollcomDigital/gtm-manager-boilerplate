@@ -48,4 +48,3 @@ test("isRetryableGoogleApiError: false for non-transient 400", () => {
   const err = { response: { status: 400 } };
   assert.equal(isRetryableGoogleApiError(err), false);
 });
-

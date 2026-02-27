@@ -344,4 +344,3 @@ export async function loadRepoConfig(configPathsCsv: string): Promise<RepoConfig
 
   return finalizeRepoConfig(input);
 }
-

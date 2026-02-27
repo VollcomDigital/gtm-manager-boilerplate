@@ -98,4 +98,3 @@ export function createGoogleAuth(options: CreateGoogleAuthOptions = {}): GoogleA
     scopes: [...scopes]
   });
 }
-

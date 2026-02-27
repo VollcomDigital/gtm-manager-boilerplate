@@ -16,4 +16,3 @@ test("zGtmTag: rejects empty name", () => {
     zGtmTag.parse({ name: "", type: "html" });
   });
 });
-

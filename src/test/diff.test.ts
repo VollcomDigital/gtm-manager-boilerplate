@@ -42,4 +42,3 @@ test("matchesDesiredSubset: desired parameter subset matches current superset", 
 
   assert.equal(matchesDesiredSubset(current, desired), true);
 });
-

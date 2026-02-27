@@ -12,6 +12,8 @@ google-api-python-client = "^2.147.0"
 google-auth = "^2.34.0"
 google-auth-oauthlib = "^1.2.4"
 PyYAML = "^6.0.2"
+pydantic = "^2.12.5"
+structlog = "^25.5.0"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.19.1"

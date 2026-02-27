@@ -1216,4 +1216,3 @@ function collectVariableReferencesDeep(value: unknown, out: Set<string>): void {
     for (const v of Object.values(value)) collectVariableReferencesDeep(v, out);
   }
 }
-

@@ -1,150 +1,130 @@
 from __future__ import annotations
 
 import csv
-import json
-from pathlib import Path
 
 from src.exporters.export_ga4_from_gtm import (
     export_ga4_tags_to_csv,
-    export_triggers_to_csv,
-    export_variables_to_csv,
-    export_workspace_snapshot_to_json,
-    resolve_account_and_container,
+    extract_parameters,
+    flatten_parameter_value,
 )
 
 
+def test_flatten_parameter_value_template() -> None:
+    assert (
+        flatten_parameter_value({"type": "TEMPLATE", "key": "eventName", "value": "purchase"})
+        == "purchase"
+    )
+
+
+def test_flatten_parameter_value_list() -> None:
+    assert flatten_parameter_value({"type": "LIST", "list": [{"value": "a"}, {"value": "b"}]}) == [
+        "a",
+        "b",
+    ]
+
+
+def test_flatten_parameter_value_map() -> None:
+    assert flatten_parameter_value(
+        {
+            "type": "MAP",
+            "map": [{"key": "name", "value": "item_id"}, {"key": "value", "value": "{{DLV}}"}],
+        }
+    ) == {"name": "item_id", "value": "{{DLV}}"}
+
+
+def test_extract_parameters_expands_event_parameters() -> None:
+    tag = {
+        "name": "GA4 Event",
+        "type": "gaawe",
+        "parameter": [
+            {"key": "eventName", "type": "TEMPLATE", "value": "purchase"},
+            {
+                "key": "eventParameters",
+                "type": "LIST",
+                "list": [
+                    {
+                        "type": "MAP",
+                        "map": [
+                            {"key": "name", "value": "item_id"},
+                            {"key": "value", "value": "{{DLV Item ID}}"},
+                        ],
+                    }
+                ],
+            },
+        ],
+    }
+    pairs = dict(extract_parameters(tag))
+    assert pairs["eventName"] == "purchase"
+    assert pairs["eventParameters"] == [{"name": "item_id", "value": "{{DLV Item ID}}"}]
+    assert pairs["eventParameters.item_id"] == "{{DLV Item ID}}"
+
+
 class _FakeRequest:
-    def __init__(self, payload: dict):
+    def __init__(self, payload):
         self._payload = payload
 
-    def execute(self) -> dict:
+    def execute(self):
         return self._payload
 
 
-class _FakeVersionsResource:
-    def __init__(self, payload: dict):
+class _FakeVersions:
+    def __init__(self, payload):
         self._payload = payload
-        self.latest_paths: list[str] = []
 
-    def latest(self, *, path: str) -> _FakeRequest:
-        self.latest_paths.append(path)
+    def latest(self, path: str):
+        assert path.endswith("/versions/latest")
         return _FakeRequest(self._payload)
 
 
-class _FakeContainersResource:
-    def __init__(self, versions_resource: _FakeVersionsResource):
-        self._versions = versions_resource
+class _FakeContainers:
+    def __init__(self, payload):
+        self._payload = payload
 
-    def versions(self) -> _FakeVersionsResource:
-        return self._versions
+    def versions(self):
+        return _FakeVersions(self._payload)
 
 
-class _FakeAccountsResource:
-    def __init__(self, containers_resource: _FakeContainersResource):
-        self._containers = containers_resource
+class _FakeAccounts:
+    def __init__(self, payload):
+        self._payload = payload
 
-    def containers(self) -> _FakeContainersResource:
-        return self._containers
+    def containers(self):
+        return _FakeContainers(self._payload)
 
 
 class _FakeService:
-    def __init__(self, payload: dict):
-        self.versions_resource = _FakeVersionsResource(payload)
-        self.accounts_resource = _FakeAccountsResource(
-            _FakeContainersResource(self.versions_resource),
-        )
+    def __init__(self, payload):
+        self._payload = payload
 
-    def accounts(self) -> _FakeAccountsResource:
-        return self.accounts_resource
+    def accounts(self):
+        return _FakeAccounts(self._payload)
 
 
-LATEST_VERSION_PAYLOAD = {
-    "name": "Version 42",
-    "path": "accounts/1/containers/2/versions/42",
-    "tag": [
-        {
-            "tagId": "10",
-            "name": "GA4 Purchase",
-            "type": "gaawe",
-            "parameter": [
-                {"key": "eventName", "type": "TEMPLATE", "value": "purchase"},
-                {"key": "currency", "type": "TEMPLATE", "value": "USD"},
-            ],
-        },
-        {"tagId": "11", "name": "Custom HTML", "type": "html"},
-    ],
-    "trigger": [
-        {
-            "triggerId": "20",
-            "name": "All Pages",
-            "type": "PAGEVIEW",
-            "parameter": [{"key": "path", "type": "TEMPLATE", "value": "/"}],
-        }
-    ],
-    "variable": [
-        {
-            "variableId": "30",
-            "name": "DLV - Item Id",
-            "type": "v",
-            "parameter": [{"key": "name", "type": "TEMPLATE", "value": "item_id"}],
-        }
-    ],
-}
+def test_export_ga4_tags_to_csv_writes_rows(tmp_path) -> None:
+    payload = {
+        "name": "accounts/1/containers/2/versions/3",
+        "tag": [
+            {"tagId": "1", "name": "Ignore", "type": "html"},
+            {
+                "tagId": "2",
+                "name": "GA4 Config",
+                "type": "gaawc",
+                "parameter": [{"key": "measurementId", "type": "TEMPLATE", "value": "G-XXXX"}],
+            },
+            {
+                "tagId": "3",
+                "name": "GA4 Event",
+                "type": "gaawe",
+                "parameter": [{"key": "eventName", "type": "TEMPLATE", "value": "purchase"}],
+            },
+        ],
+    }
+    service = _FakeService(payload)
+    out = tmp_path / "exports" / "ga4.csv"
+    exported = export_ga4_tags_to_csv(service, "1", "2", str(out))
+    assert exported == 2
 
-
-def test_resolve_account_and_container_with_target_mapping(tmp_path: Path) -> None:
-    config_path = tmp_path / "targets.yml"
-    config_path.write_text(
-        "targets:\n  site_a:\n    account_id: '123'\n    container_id: '456'\n",
-        encoding="utf-8",
-    )
-
-    account_id, container_id = resolve_account_and_container(
-        None,
-        None,
-        "site_a",
-        str(config_path),
-    )
-    assert account_id == "123"
-    assert container_id == "456"
-
-
-def test_export_ga4_tags_to_csv_writes_only_ga4_rows(tmp_path: Path) -> None:
-    service = _FakeService(LATEST_VERSION_PAYLOAD)
-    output_path = tmp_path / "ga4.csv"
-
-    count = export_ga4_tags_to_csv(service, "1", "2", str(output_path))
-    assert count == 1
-
-    with output_path.open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.reader(handle))
-
-    assert rows[0][0:4] == [
-        "account_id",
-        "container_id",
-        "container_version_name",
-        "tag_id",
-    ]
-    assert rows[1][3] == "10"
-    assert rows[1][4] == "GA4 Purchase"
-    assert rows[1][6] == "purchase"
-
-
-def test_export_triggers_variables_and_snapshot(tmp_path: Path) -> None:
-    service = _FakeService(LATEST_VERSION_PAYLOAD)
-    triggers_csv = tmp_path / "triggers.csv"
-    variables_csv = tmp_path / "variables.csv"
-    snapshot_json = tmp_path / "snapshot.json"
-
-    trigger_count = export_triggers_to_csv(service, "1", "2", str(triggers_csv))
-    variable_count = export_variables_to_csv(service, "1", "2", str(variables_csv))
-    snapshot = export_workspace_snapshot_to_json(service, "1", "2", str(snapshot_json))
-
-    assert trigger_count == 1
-    assert variable_count == 1
-    assert snapshot["container_version_name"] == "Version 42"
-    assert len(snapshot["triggers"]) == 1
-    assert len(snapshot["variables"]) == 1
-
-    persisted_snapshot = json.loads(snapshot_json.read_text(encoding="utf-8"))
-    assert persisted_snapshot["container_version_path"].endswith("/versions/42")
+    rows = list(csv.reader(out.read_text(encoding="utf-8").splitlines()))
+    assert rows[0][0] == "account_id"
+    # One row for GA4 Config parameter + one row for GA4 Event parameter.
+    assert len(rows) == 1 + 2

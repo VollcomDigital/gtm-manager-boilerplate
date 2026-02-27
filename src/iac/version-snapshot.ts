@@ -32,4 +32,3 @@ export function snapshotFromContainerVersion(version: tagmanager_v2.Schema$Conta
     zones: version.zone ?? []
   };
 }
-

@@ -237,4 +237,3 @@ function mergeDesiredStateParts(parts: WorkspaceDesiredStatePartial[]): Workspac
 
   return out;
 }
-

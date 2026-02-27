@@ -93,4 +93,3 @@ test("loadRepoConfig: rejects config paths outside workspace root", async () => 
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
-

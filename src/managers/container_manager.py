@@ -1,4 +1,4 @@
-"""Utility helpers for working with GTM containers."""
+"""Helpers for working with GTM containers, workspaces, and versions."""
 
 from __future__ import annotations
 
@@ -20,15 +20,22 @@ READ_ONLY_VARIABLE_FIELDS = {
 }
 
 
+def _prepare_payload(payload: dict[str, Any], *, read_only_fields: set[str]) -> dict[str, Any]:
+    """Return a cleaned GTM payload suitable for create/update requests."""
+    cleaned = deepcopy(payload)
+    for key in read_only_fields:
+        cleaned.pop(key, None)
+    # Strip IaC-only metadata fields.
+    for key in list(cleaned.keys()):
+        if key.startswith("__"):
+            cleaned.pop(key, None)
+    return cleaned
+
+
 class ContainerManager:
-    """Container-level GTM automation helpers (diff, sync, publish)."""
+    """Container-level operations (containers, workspaces, versions)."""
 
-    def __init__(self, service):
-        """Initialize the manager.
-
-        Args:
-            service: Google API client from ``googleapiclient.discovery.build``.
-        """
+    def __init__(self, service: Any):
         self.service = service
         self.tag_manager = TagManager(service)
         self.trigger_manager = TriggerManager(service)
@@ -579,7 +586,6 @@ class ContainerManager:
 
         return variables
 
-
 def _new_entity_summary() -> dict[str, list[str]]:
     return {"created": [], "updated": [], "deleted": [], "noop": []}
 
@@ -600,10 +606,3 @@ def _record_summary_action(
 
     for key in ("created", "updated", "noop"):
         entity_summary[key].sort()
-
-
-def _prepare_payload(entity: dict[str, Any], *, read_only_fields: set[str]) -> dict[str, Any]:
-    payload = deepcopy(entity)
-    for field in read_only_fields:
-        payload.pop(field, None)
-    return payload

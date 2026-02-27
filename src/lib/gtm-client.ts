@@ -1460,4 +1460,3 @@ export class GtmClient {
     return await this.updateTemplate(existing.path, template, updateOptions);
   }
 }
-

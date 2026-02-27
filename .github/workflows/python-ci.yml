@@ -1,0 +1,58 @@
+name: python-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - cursor/**
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@c3f4a7b79d17d79f0133196801a2fe1a23a6c25b # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Poetry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "poetry==2.3.2"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          poetry install --no-interaction
+
+      - name: Ruff
+        shell: bash
+        run: |
+          set -euo pipefail
+          poetry run ruff check src tests
+          poetry run ruff format --check src tests
+
+      - name: Mypy
+        shell: bash
+        run: |
+          set -euo pipefail
+          poetry run mypy --config-file pyproject.toml src
+
+      - name: Pytest
+        shell: bash
+        run: |
+          set -euo pipefail
+          poetry run pytest -q

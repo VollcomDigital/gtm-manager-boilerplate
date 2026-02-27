@@ -85,4 +85,3 @@ export function createLogger(options: CreateLoggerOptions = {}): Logger {
     error: (m, f) => emit("error", m, f)
   };
 }
-

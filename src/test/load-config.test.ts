@@ -68,4 +68,3 @@ test("loadWorkspaceDesiredState: rejects config paths outside workspace root", a
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
-

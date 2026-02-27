@@ -10,13 +10,13 @@ Thanks for contributing to this repository.
    npm ci
    ```
 
-2. Install Python dependencies:
+1. Install Python dependencies:
 
    ```bash
    poetry install
    ```
 
-3. Install pre-commit hooks:
+1. Install pre-commit hooks:
 
    ```bash
    poetry run pre-commit install

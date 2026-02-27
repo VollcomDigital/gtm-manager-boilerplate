@@ -2,124 +2,130 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
-
-DEFAULT_READ_ONLY_FIELDS = {
-    "accountId",
-    "containerId",
-    "workspaceId",
-    "tagId",
-    "triggerId",
-    "variableId",
-    "path",
-    "fingerprint",
-    "tagManagerUrl",
-}
+from typing import Any
 
 
 def ensure_output_directory(path: str) -> None:
-    """Create the parent directory for an output file if needed.
+    """Ensure the output directory exists for a given file or directory path.
 
     Args:
-        path: Destination file path.
+        path: A filesystem path. If it looks like a file path (has a suffix),
+            the parent directory is created. Otherwise the path itself is treated
+            as a directory to create.
 
     Returns:
-        None
-
-    Raises:
-        ValueError: If ``path`` is empty.
-        OSError: If the directory cannot be created.
+        None.
     """
-    if not path:
-        raise ValueError("Output path must not be empty.")
-
-    directory = Path(path).expanduser().resolve().parent
+    candidate = Path(path).expanduser()
+    directory = candidate.parent if candidate.suffix else candidate
+    if str(directory) == "":
+        return
     directory.mkdir(parents=True, exist_ok=True)
 
 
-def canonicalize_for_diff(
-    value: Any,
-    *,
-    read_only_fields: Iterable[str] | None = None,
-) -> Any:
-    """Canonicalize GTM entities for deterministic comparisons.
+COMMON_READ_ONLY_FIELDS: set[str] = {
+    "accountId",
+    "containerId",
+    "workspaceId",
+    "path",
+    "fingerprint",
+    "tagManagerUrl",
+    "tagId",
+    "triggerId",
+    "variableId",
+}
+
+
+def canonicalize_for_diff(value: Any, *, read_only_fields: set[str] | None = None) -> Any:
+    """Return a stable, comparison-friendly representation of a GTM entity.
 
     Args:
-        value: Raw entity value to normalize.
-        read_only_fields: Field names removed from dictionaries before compare.
+        value: Any JSON-like structure (dict/list/primitives).
+        read_only_fields: Optional set of dict keys to drop recursively. This is useful
+            for stripping server-generated fields like ``path``/``fingerprint``/IDs.
 
     Returns:
-        A recursively normalized structure with sorted keys and stable list order.
+        A stable structure with:
+        - specified read-only keys removed
+        - dict keys sorted
+        - lists normalized recursively (and sorted when safely possible)
     """
-    fields_to_drop = set(read_only_fields or DEFAULT_READ_ONLY_FIELDS)
-    return _canonicalize(value, fields_to_drop)
-
-
-def diff_entities_by_name(
-    desired: Sequence[Mapping[str, Any]],
-    current: Sequence[Mapping[str, Any]],
-    *,
-    read_only_fields: Iterable[str] | None = None,
-) -> dict[str, list[str]]:
-    """Compute create/update/delete sets for entity lists keyed by ``name``.
-
-    Args:
-        desired: Target list of entities from IaC config.
-        current: Current list of GTM entities fetched from API.
-        read_only_fields: Optional override for fields to ignore in comparisons.
-
-    Returns:
-        A dict containing sorted ``create``, ``update``, and ``delete`` name lists.
-    """
-    desired_map = _index_by_name(desired)
-    current_map = _index_by_name(current)
-    fields_to_drop = set(read_only_fields or DEFAULT_READ_ONLY_FIELDS)
-
-    desired_names = set(desired_map)
-    current_names = set(current_map)
-
-    create = sorted(desired_names - current_names)
-    delete = sorted(current_names - desired_names)
-
-    update: list[str] = []
-    for name in sorted(desired_names & current_names):
-        desired_norm = _canonicalize(desired_map[name], fields_to_drop)
-        current_norm = _canonicalize(current_map[name], fields_to_drop)
-        if desired_norm != current_norm:
-            update.append(name)
-
-    return {"create": create, "update": update, "delete": delete}
-
-
-def _index_by_name(entities: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
-    indexed: dict[str, Mapping[str, Any]] = {}
-    for entity in entities:
-        name = str(entity.get("name", "")).strip()
-        if name:
-            indexed[name] = entity
-    return indexed
-
-
-def _canonicalize(value: Any, read_only_fields: set[str]) -> Any:
-    if isinstance(value, Mapping):
-        cleaned = {
-            key: _canonicalize(inner, read_only_fields)
-            for key, inner in value.items()
-            if key not in read_only_fields
-        }
-        return {key: cleaned[key] for key in sorted(cleaned)}
+    if read_only_fields is None:
+        ro = COMMON_READ_ONLY_FIELDS
+    else:
+        ro = read_only_fields
 
     if isinstance(value, list):
-        canonical_items = [_canonicalize(item, read_only_fields) for item in value]
-        return sorted(canonical_items, key=_stable_sort_key)
+        items = [canonicalize_for_diff(v, read_only_fields=ro) for v in value]
+        if all(isinstance(x, dict) for x in items):
+            # Deterministic ordering for list-of-dicts.
+            return sorted(items, key=lambda x: repr(x))
+        return items
+
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k in sorted(value.keys()):
+            if k in ro:
+                continue
+            out[k] = canonicalize_for_diff(value[k], read_only_fields=ro)
+        return out
 
     return value
 
 
-def _stable_sort_key(value: Any) -> str:
-    try:
-        return json.dumps(value, sort_keys=True, ensure_ascii=False)
-    except TypeError:
-        return str(value)
+def diff_entities_by_name(
+    desired: list[dict[str, Any]],
+    current: list[dict[str, Any]],
+    *,
+    read_only_fields: set[str] | None = None,
+) -> dict[str, list[str]]:
+    """Compute a simple diff between desired/current entities keyed by ``name``.
+
+    Entity identity is case-insensitive by ``name``.
+
+    Args:
+        desired: Desired entities.
+        current: Current entities.
+        read_only_fields: Keys to ignore in comparisons (e.g., path/fingerprint/IDs).
+
+    Returns:
+        Dict with keys: ``create``, ``update``, ``delete`` (each a list of names).
+    """
+    ro = read_only_fields or COMMON_READ_ONLY_FIELDS
+
+    desired_by_name: dict[str, dict[str, Any]] = {}
+    for d in desired:
+        name = d.get("name")
+        if isinstance(name, str) and name.strip():
+            desired_by_name[name.strip().lower()] = d
+
+    current_by_name: dict[str, dict[str, Any]] = {}
+    for c in current:
+        name = c.get("name")
+        if isinstance(name, str) and name.strip():
+            current_by_name[name.strip().lower()] = c
+
+    create: list[str] = []
+    update: list[str] = []
+    delete: list[str] = []
+
+    for name_lower, d in desired_by_name.items():
+        current_entity = current_by_name.get(name_lower)
+        if not current_entity:
+            create.append(str(d.get("name") or name_lower))
+            continue
+        if canonicalize_for_diff(d, read_only_fields=ro) != canonicalize_for_diff(
+            current_entity, read_only_fields=ro
+        ):
+            update.append(str(d.get("name") or name_lower))
+
+    for name_lower, c in current_by_name.items():
+        if name_lower not in desired_by_name:
+            delete.append(str(c.get("name") or name_lower))
+
+    create.sort(key=lambda x: x.lower())
+    update.sort(key=lambda x: x.lower())
+    delete.sort(key=lambda x: x.lower())
+
+    return {"create": create, "update": update, "delete": delete}

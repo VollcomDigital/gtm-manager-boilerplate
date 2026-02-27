@@ -1,0 +1,1 @@
+"""GTM resource manager modules."""

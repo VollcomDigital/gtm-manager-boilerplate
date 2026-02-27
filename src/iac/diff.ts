@@ -275,4 +275,3 @@ export function diffWorkspace(desired: WorkspaceDesiredState, current: Workspace
     zones: diffByName(desired.zones, current.zones)
   };
 }
-

@@ -1,13 +1,14 @@
-"""Utility helpers for working with GTM triggers."""
+"""Helpers for working with GTM triggers."""
 
 from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
 
+from ..utils.google_api import execute_with_retry, list_all_pages
 from ..utils.helpers import canonicalize_for_diff
 
-READ_ONLY_TRIGGER_FIELDS = {
+READ_ONLY_TRIGGER_FIELDS: set[str] = {
     "accountId",
     "containerId",
     "workspaceId",
@@ -19,15 +20,21 @@ READ_ONLY_TRIGGER_FIELDS = {
 
 
 class TriggerManager:
-    """Manage GTM workspace triggers with idempotent upsert helpers."""
+    """Trigger operations (list/upsert/delete by name)."""
 
-    def __init__(self, service):
-        """Initialize the manager.
-
-        Args:
-            service: Google API client from ``googleapiclient.discovery.build``.
-        """
+    def __init__(self, service: Any):
         self.service = service
+
+    @staticmethod
+    def workspace_path(account_id: str, container_id: str, workspace_id: str) -> str:
+        return f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
+
+    @staticmethod
+    def trigger_path(account_id: str, container_id: str, workspace_id: str, trigger_id: str) -> str:
+        return f"{TriggerManager.workspace_path(account_id, container_id, workspace_id)}/triggers/{trigger_id}"
+
+    def _resource(self) -> Any:
+        return self.service.accounts().containers().workspaces().triggers()
 
     def list_triggers(
         self,
@@ -35,92 +42,110 @@ class TriggerManager:
         container_id: str,
         workspace_id: str,
     ) -> list[dict[str, Any]]:
-        """Return all triggers for a GTM workspace.
+        """Return all triggers for a workspace (paginated)."""
+        parent = self.workspace_path(account_id, container_id, workspace_id)
 
-        Args:
-            account_id: GTM account identifier.
-            container_id: GTM container identifier.
-            workspace_id: GTM workspace identifier.
+        def fetch_page(page_token: str | None) -> dict[str, Any]:
+            req = self._resource().list(parent=parent, pageToken=page_token)
+            return execute_with_retry(req.execute)
 
-        Returns:
-            A list of trigger objects.
-        """
-        workspace_path = (
-            f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
-        )
-        return self._list_triggers_by_workspace_path(workspace_path)
+        return list_all_pages(fetch_page, items_field="trigger")
+
+    def list_triggers_from_workspace_path(self, workspace_path: str) -> list[dict[str, Any]]:
+        """Return all triggers for a workspace path (paginated)."""
+
+        def fetch_page(page_token: str | None) -> dict[str, Any]:
+            req = self._resource().list(parent=workspace_path, pageToken=page_token)
+            return execute_with_retry(req.execute)
+
+        return list_all_pages(fetch_page, items_field="trigger")
+
+    def create_trigger(self, workspace_path: str, trigger: dict[str, Any]) -> dict[str, Any]:
+        """Create a trigger in a workspace."""
+        return execute_with_retry(self._resource().create(parent=workspace_path, body=trigger).execute)
+
+    def update_trigger(
+        self,
+        trigger_path: str,
+        trigger: dict[str, Any],
+        *,
+        fingerprint: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a trigger by API path."""
+        kwargs: dict[str, Any] = {"path": trigger_path, "body": trigger}
+        if fingerprint:
+            kwargs["fingerprint"] = fingerprint
+        return execute_with_retry(self._resource().update(**kwargs).execute)
+
+    def delete_trigger(self, trigger_path: str) -> None:
+        """Delete a trigger by API path."""
+        execute_with_retry(self._resource().delete(path=trigger_path).execute)
+
+    def _find_trigger_by_name(
+        self,
+        account_id: str,
+        container_id: str,
+        workspace_id: str,
+        name: str,
+    ) -> dict[str, Any] | None:
+        wanted = name.strip().lower()
+        for trig in self.list_triggers(account_id, container_id, workspace_id):
+            if str(trig.get("name") or "").strip().lower() == wanted:
+                return trig
+        return None
 
     def upsert_trigger(
         self,
         account_id: str,
         container_id: str,
         workspace_id: str,
-        trigger: dict[str, Any],
+        desired: dict[str, Any],
         *,
         dry_run: bool = False,
     ) -> tuple[str, dict[str, Any]]:
-        """Create or update a trigger by ``name``.
-
-        Args:
-            account_id: GTM account identifier.
-            container_id: GTM container identifier.
-            workspace_id: GTM workspace identifier.
-            trigger: Desired GTM trigger object.
-            dry_run: If True, only reports intended action.
-
-        Returns:
-            Tuple of ``(action, trigger_payload)`` where action is one of
-            ``created``, ``updated``, or ``noop``.
-
-        Raises:
-            ValueError: If ``trigger`` does not include ``name``.
-        """
-        name = str(trigger.get("name", "")).strip()
+        """Create or update a trigger by name."""
+        name = str(desired.get("name") or "").strip()
         if not name:
-            raise ValueError("Trigger payload must include a non-empty 'name'.")
+            raise ValueError("Trigger is missing a non-empty 'name'.")
 
-        workspace_path = (
-            f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
-        )
-        desired_payload = _prepare_payload(trigger, read_only_fields=READ_ONLY_TRIGGER_FIELDS)
-        existing = self._find_trigger_by_name(workspace_path, name)
-
+        existing = self._find_trigger_by_name(account_id, container_id, workspace_id, name)
         if not existing:
             if dry_run:
-                return "created", desired_payload
-            created = (
-                self.service.accounts()
-                .containers()
-                .workspaces()
-                .triggers()
-                .create(parent=workspace_path, body=desired_payload)
-                .execute()
+                return "created", {"name": name, "dry_run": True}
+            parent = self.workspace_path(account_id, container_id, workspace_id)
+            cleaned_desired = deepcopy(desired)
+            for k in READ_ONLY_TRIGGER_FIELDS:
+                cleaned_desired.pop(k, None)
+            created = execute_with_retry(
+                self._resource().create(parent=parent, body=cleaned_desired).execute
             )
             return "created", created
 
-        if _is_effectively_equal(existing, desired_payload):
+        desired_canon = canonicalize_for_diff(desired, read_only_fields=READ_ONLY_TRIGGER_FIELDS)
+        existing_canon = canonicalize_for_diff(existing, read_only_fields=READ_ONLY_TRIGGER_FIELDS)
+        if desired_canon == existing_canon:
             return "noop", existing
 
         if dry_run:
-            return "updated", desired_payload
+            return "updated", {"name": name, "dry_run": True}
 
-        trigger_path = existing.get("path")
-        if not trigger_path:
-            raise ValueError(f"Existing trigger '{name}' is missing GTM path.")
-
-        update_body = deepcopy(desired_payload)
-        existing_trigger_id = existing.get("triggerId")
-        if existing_trigger_id:
-            update_body["triggerId"] = existing_trigger_id
-
-        updated = (
-            self.service.accounts()
-            .containers()
-            .workspaces()
-            .triggers()
-            .update(path=trigger_path, body=update_body)
-            .execute()
+        path = existing.get("path") or (
+            self.trigger_path(account_id, container_id, workspace_id, str(existing.get("triggerId") or ""))
         )
+        body = deepcopy(existing)
+        for k in READ_ONLY_TRIGGER_FIELDS:
+            body.pop(k, None)
+        cleaned_desired = deepcopy(desired)
+        for k in READ_ONLY_TRIGGER_FIELDS:
+            cleaned_desired.pop(k, None)
+        body.update(cleaned_desired)
+
+        fingerprint = existing.get("fingerprint")
+        kwargs: dict[str, Any] = {"path": path, "body": body}
+        if isinstance(fingerprint, str) and fingerprint.strip():
+            kwargs["fingerprint"] = fingerprint
+
+        updated = execute_with_retry(self._resource().update(**kwargs).execute)
         return "updated", updated
 
     def delete_trigger_by_name(
@@ -128,88 +153,17 @@ class TriggerManager:
         account_id: str,
         container_id: str,
         workspace_id: str,
-        trigger_name: str,
+        name: str,
         *,
         dry_run: bool = False,
     ) -> bool:
-        """Delete a trigger by name.
-
-        Args:
-            account_id: GTM account identifier.
-            container_id: GTM container identifier.
-            workspace_id: GTM workspace identifier.
-            trigger_name: Name of trigger to delete.
-            dry_run: If True, only reports whether trigger exists.
-
-        Returns:
-            True when a matching trigger exists (and is deleted unless ``dry_run``).
-        """
-        workspace_path = (
-            f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
-        )
-        existing = self._find_trigger_by_name(workspace_path, trigger_name)
+        existing = self._find_trigger_by_name(account_id, container_id, workspace_id, name)
         if not existing:
             return False
-
         if dry_run:
             return True
-
-        trigger_path = existing.get("path")
-        if not trigger_path:
-            raise ValueError(f"Existing trigger '{trigger_name}' is missing GTM path.")
-
-        (
-            self.service.accounts()
-            .containers()
-            .workspaces()
-            .triggers()
-            .delete(path=trigger_path)
-            .execute()
-        )
+        path = existing.get("path")
+        if not isinstance(path, str) or not path.strip():
+            return False
+        execute_with_retry(self._resource().delete(path=path).execute)
         return True
-
-    def _find_trigger_by_name(
-        self, workspace_path: str, trigger_name: str
-    ) -> dict[str, Any] | None:
-        for trigger in self._list_triggers_by_workspace_path(workspace_path):
-            if str(trigger.get("name", "")).strip() == trigger_name:
-                return trigger
-        return None
-
-    def _list_triggers_by_workspace_path(self, workspace_path: str) -> list[dict[str, Any]]:
-        triggers: list[dict[str, Any]] = []
-        next_page_token: str | None = None
-
-        while True:
-            request = (
-                self.service.accounts()
-                .containers()
-                .workspaces()
-                .triggers()
-                .list(parent=workspace_path, pageToken=next_page_token)
-            )
-            response = request.execute()
-            triggers.extend(response.get("trigger", []))
-
-            next_page_token = response.get("nextPageToken")
-            if not next_page_token:
-                break
-
-        return triggers
-
-
-def _is_effectively_equal(current: dict[str, Any], desired: dict[str, Any]) -> bool:
-    return canonicalize_for_diff(
-        current,
-        read_only_fields=READ_ONLY_TRIGGER_FIELDS,
-    ) == canonicalize_for_diff(
-        desired,
-        read_only_fields=READ_ONLY_TRIGGER_FIELDS,
-    )
-
-
-def _prepare_payload(trigger: dict[str, Any], *, read_only_fields: set[str]) -> dict[str, Any]:
-    payload = deepcopy(trigger)
-    for field in read_only_fields:
-        payload.pop(field, None)
-    return payload

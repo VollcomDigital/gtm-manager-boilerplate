@@ -27,4 +27,3 @@ test("retry soak: repeated transient bursts eventually succeed", async () => {
     assert.equal(attempts, 3);
   }
 });
-
