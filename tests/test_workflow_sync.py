@@ -212,3 +212,30 @@ def test_publish_from_workspace_dry_run() -> None:
     )
     assert res["dryRun"] is True
     assert res["action"] == "publish"
+
+
+def test_sync_workspace_dry_run_allows_new_trigger_name_references() -> None:
+    """Arrange-Act-Assert: dry-run should not crash on missing trigger IDs."""
+    mgr = WorkspaceWorkflowManager(service=None)
+    mgr.containers = _FakeContainerManager()
+    mgr.variables = _FakeVariableManager()
+    mgr.triggers = _FakeTriggerManager()
+    mgr.tags = _FakeTagManager()
+
+    desired = {
+        "variables": [],
+        "triggers": [{"name": "New Trigger", "type": "PAGEVIEW"}],
+        "tags": [{"name": "New Tag", "type": "html", "firingTriggerNames": ["New Trigger"]}],
+    }
+
+    res = mgr.sync_workspace(
+        desired_snapshot=desired,
+        account_id="1",
+        container_id="2",
+        workspace_name="iac",
+        dry_run=True,
+        delete_missing=False,
+    )
+
+    assert res["triggers"]["created"] == ["New Trigger"]
+    assert res["tags"]["created"] == ["New Tag"]

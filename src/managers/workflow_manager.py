@@ -10,10 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+import structlog
+from pydantic import BaseModel, ConfigDict, Field
+
 from .container_manager import ContainerManager
 from .tag_manager import TagManager
 from .trigger_manager import TriggerManager
 from .variable_manager import VariableManager
+
+_LOG = structlog.get_logger(__name__)
 
 _WORKSPACE_PATH_MISSING_ERROR = "Workspace response missing path/workspaceId."
 _DESIRED_LISTS_MISSING_ERROR = "Desired snapshot must contain list fields: variables/triggers/tags."
@@ -198,51 +203,94 @@ def _resolve_trigger_ids(
     trigger_names: list[str],
     trigger_name_to_id: dict[str, str],
     label: str,
+    allow_unresolved: bool,
+    workspace_path: str,
 ) -> list[str]:
     resolved: list[str] = []
+    missing: list[str] = []
     for raw in trigger_names:
         if not isinstance(raw, str) or not raw.strip():
             continue
         trigger_id = trigger_name_to_id.get(_lower(raw))
         if not trigger_id:
-            raise ValueError(f"Tag '{tag_name}' references missing {label} by name: '{raw}'")
+            missing.append(raw)
+            continue
         resolved.append(trigger_id)
+
+    if missing:
+        event = "gtm.dry_run_missing_trigger_ids" if allow_unresolved else "gtm.missing_trigger_ids"
+        _LOG.warning(
+            event,
+            tag_name=tag_name,
+            workspace_path=workspace_path,
+            label=label,
+            missing_trigger_names=sorted({m.strip() for m in missing if m.strip()}, key=str.lower),
+            allow_unresolved=allow_unresolved,
+        )
+        if not allow_unresolved:
+            raise ValueError(
+                f"Tag '{tag_name}' references missing {label} by name: {', '.join(sorted(missing))}",
+            )
     return resolved
 
 
+class _DesiredTagModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str = Field(min_length=1)
+    firingTriggerNames: list[str] | None = None
+    blockingTriggerNames: list[str] | None = None
+    firingTriggerId: list[str] | None = None
+    blockingTriggerId: list[str] | None = None
+
+
 def _tag_with_resolved_triggers(
-    tag: dict[str, Any], trigger_name_to_id: dict[str, str]
+    tag: dict[str, Any],
+    trigger_name_to_id: dict[str, str],
+    *,
+    allow_unresolved: bool,
+    workspace_path: str,
 ) -> dict[str, Any]:
+    parsed = _DesiredTagModel.model_validate(tag)
     out = dict(tag)
-    tag_name = str(out.get("name") or "?")
+    tag_name = parsed.name
 
     if "firingTriggerNames" in out and "firingTriggerId" in out:
         raise ValueError(
             f"Tag '{tag_name}' cannot specify both firingTriggerNames and firingTriggerId."
         )
-    firing_names = out.get("firingTriggerNames")
+    firing_names = parsed.firingTriggerNames
     if isinstance(firing_names, list):
-        out["firingTriggerId"] = _resolve_trigger_ids(
+        resolved_ids = _resolve_trigger_ids(
             tag_name=tag_name,
             trigger_names=[str(x) for x in firing_names],
             trigger_name_to_id=trigger_name_to_id,
             label="trigger",
+            allow_unresolved=allow_unresolved,
+            workspace_path=workspace_path,
         )
-        out.pop("firingTriggerNames", None)
+        # In dry-run, keep names if unresolved; only emit IDs if all resolved.
+        if resolved_ids and len(resolved_ids) == len([x for x in firing_names if isinstance(x, str) and x.strip()]):
+            out["firingTriggerId"] = resolved_ids
+            out.pop("firingTriggerNames", None)
 
     if "blockingTriggerNames" in out and "blockingTriggerId" in out:
         raise ValueError(
             f"Tag '{tag_name}' cannot specify both blockingTriggerNames and blockingTriggerId."
         )
-    blocking_names = out.get("blockingTriggerNames")
+    blocking_names = parsed.blockingTriggerNames
     if isinstance(blocking_names, list):
-        out["blockingTriggerId"] = _resolve_trigger_ids(
+        resolved_ids = _resolve_trigger_ids(
             tag_name=tag_name,
             trigger_names=[str(x) for x in blocking_names],
             trigger_name_to_id=trigger_name_to_id,
             label="blocking trigger",
+            allow_unresolved=allow_unresolved,
+            workspace_path=workspace_path,
         )
-        out.pop("blockingTriggerNames", None)
+        if resolved_ids and len(resolved_ids) == len([x for x in blocking_names if isinstance(x, str) and x.strip()]):
+            out["blockingTriggerId"] = resolved_ids
+            out.pop("blockingTriggerNames", None)
 
     return out
 
@@ -460,12 +508,18 @@ class WorkspaceWorkflowManager:
         desired_tag_by_name = _index_by_name(desired_tags)
 
         for name_lower, raw_desired_tag in desired_tag_by_name.items():
-            desired_tag = _tag_with_resolved_triggers(raw_desired_tag, trigger_name_to_id)
+            desired_tag = _tag_with_resolved_triggers(
+                raw_desired_tag,
+                trigger_name_to_id,
+                allow_unresolved=dry_run,
+                workspace_path=workspace_path,
+            )
             display_name = str(desired_tag.get("name") or name_lower)
             existing = tag_by_name.get(name_lower)
 
             if not existing:
-                if not isinstance(desired_tag.get("firingTriggerId"), list):
+                # In dry-run, allow unresolved trigger names (bootstrapping planning).
+                if not dry_run and not isinstance(desired_tag.get("firingTriggerId"), list):
                     raise ValueError(
                         f"Cannot create tag '{display_name}': missing firingTriggerId (or firingTriggerNames)."
                     )
