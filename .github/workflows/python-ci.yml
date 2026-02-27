@@ -56,4 +56,3 @@ jobs:
         run: |
           set -euo pipefail
           poetry run pytest -q
-

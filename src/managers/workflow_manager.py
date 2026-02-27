@@ -15,6 +15,9 @@ from managers.tag_manager import TagManager
 from managers.trigger_manager import TriggerManager
 from managers.variable_manager import VariableManager
 
+_WORKSPACE_PATH_MISSING_ERROR = "Workspace response missing path/workspaceId."
+_DESIRED_LISTS_MISSING_ERROR = "Desired snapshot must contain list fields: variables/triggers/tags."
+
 _DYNAMIC_FIELDS = {
     "accountId",
     "containerId",
@@ -78,6 +81,28 @@ def _index_by_name(entities: Iterable[dict[str, Any]]) -> dict[str, dict[str, An
         if isinstance(name, str) and name.strip():
             out[_lower(name)] = e
     return out
+
+
+def _sort_by_name(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(items, key=lambda x: _lower(str(x.get("name") or "")))
+
+
+def _workspace_path_from_workspace_payload(
+    containers: ContainerManager,
+    *,
+    account_id: str,
+    container_id: str,
+    workspace: dict[str, Any],
+) -> str:
+    workspace_id = workspace.get("workspaceId")
+    workspace_path = workspace.get("path") or (
+        containers.workspace_path(account_id, container_id, str(workspace_id))
+        if workspace_id
+        else None
+    )
+    if not isinstance(workspace_path, str) or not workspace_path.strip():
+        raise ValueError(_WORKSPACE_PATH_MISSING_ERROR)
+    return workspace_path
 
 
 @dataclass(frozen=True)
@@ -249,111 +274,53 @@ class WorkspaceWorkflowManager:
         self.triggers = TriggerManager(service)
         self.variables = VariableManager(service)
 
-    def export_workspace_snapshot(
+    def _get_workspace_path(
         self,
         *,
         account_id: str,
         container_id: str,
         workspace_name: str,
-        create_if_missing: bool = False,
-    ) -> dict[str, Any]:
-        """Fetch tags/triggers/variables from a workspace into a stable snapshot shape."""
+        create_if_missing: bool,
+    ) -> str:
         workspace = self.containers.get_or_create_workspace(
             account_id,
             container_id,
             workspace_name,
             create_if_missing=create_if_missing,
         )
-        workspace_id = workspace.get("workspaceId")
-        workspace_path = workspace.get("path") or (
-            self.containers.workspace_path(account_id, container_id, str(workspace_id))
-            if workspace_id
-            else None
-        )
-        if not isinstance(workspace_path, str) or not workspace_path.strip():
-            raise ValueError("Workspace response missing path/workspaceId.")
-
-        tags = self.tags.list_tags_from_workspace_path(workspace_path)
-        triggers = self.triggers.list_triggers_from_workspace_path(workspace_path)
-        variables = self.variables.list_variables_from_workspace_path(workspace_path)
-
-        def sort_by_name(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            return sorted(
-                items,
-                key=lambda x: _lower(str(x.get("name") or "")),
-            )
-
-        return {
-            "workspaceName": workspace_name,
-            "workspacePath": workspace_path,
-            "tags": [normalize_for_diff(t) for t in sort_by_name(tags)],
-            "triggers": [normalize_for_diff(t) for t in sort_by_name(triggers)],
-            "variables": [normalize_for_diff(v) for v in sort_by_name(variables)],
-        }
-
-    def diff_workspace_against_snapshot(
-        self,
-        *,
-        desired_snapshot: dict[str, Any],
-        account_id: str,
-        container_id: str,
-        workspace_name: str,
-    ) -> WorkspaceDiff:
-        """Diff a desired snapshot against the current workspace state."""
-        current = self.export_workspace_snapshot(
+        return _workspace_path_from_workspace_payload(
+            self.containers,
             account_id=account_id,
             container_id=container_id,
-            workspace_name=workspace_name,
-            create_if_missing=False,
+            workspace=workspace,
         )
-        return diff_workspace(desired_snapshot, current)
 
-    def sync_workspace(
-        self,
-        *,
+    @staticmethod
+    def _parse_desired_snapshot(
         desired_snapshot: dict[str, Any],
-        account_id: str,
-        container_id: str,
-        workspace_name: str,
-        dry_run: bool = True,
-        delete_missing: bool = False,
-        update_existing: bool = True,
-    ) -> dict[str, Any]:
-        """Apply desired tags/triggers/variables to a workspace (idempotent by name)."""
-        workspace = self.containers.get_or_create_workspace(
-            account_id,
-            container_id,
-            workspace_name,
-            create_if_missing=True,
-        )
-        workspace_id = workspace.get("workspaceId")
-        workspace_path = workspace.get("path") or (
-            self.containers.workspace_path(account_id, container_id, str(workspace_id))
-            if workspace_id
-            else None
-        )
-        if not isinstance(workspace_path, str) or not workspace_path.strip():
-            raise ValueError("Workspace response missing path/workspaceId.")
-
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         desired_variables = desired_snapshot.get("variables") or []
         desired_triggers = desired_snapshot.get("triggers") or []
         desired_tags = desired_snapshot.get("tags") or []
+
         if (
             not isinstance(desired_variables, list)
             or not isinstance(desired_triggers, list)
             or not isinstance(desired_tags, list)
         ):
-            raise ValueError("Desired snapshot must contain list fields: variables/triggers/tags.")
+            raise ValueError(_DESIRED_LISTS_MISSING_ERROR)
 
-        # Fetch current state.
-        current_variables = self.variables.list_variables_from_workspace_path(workspace_path)
-        current_triggers = self.triggers.list_triggers_from_workspace_path(workspace_path)
-        current_tags = self.tags.list_tags_from_workspace_path(workspace_path)
+        return (
+            [v for v in desired_variables if isinstance(v, dict)],
+            [t for t in desired_triggers if isinstance(t, dict)],
+            [t for t in desired_tags if isinstance(t, dict)],
+        )
 
-        var_by_name = _index_by_name(current_variables)
-        tag_by_name = _index_by_name(current_tags)
-
-        summary: dict[str, Any] = {
+    @staticmethod
+    def _init_summary(
+        *, workspace_path: str, dry_run: bool, delete_missing: bool
+    ) -> dict[str, Any]:
+        return {
             "workspacePath": workspace_path,
             "dryRun": dry_run,
             "deleteMissing": delete_missing,
@@ -362,8 +329,19 @@ class WorkspaceWorkflowManager:
             "tags": {"created": [], "updated": [], "deleted": [], "skipped": []},
         }
 
-        # Variables first.
-        desired_var_by_name = _index_by_name([v for v in desired_variables if isinstance(v, dict)])
+    def _sync_variables(
+        self,
+        *,
+        workspace_path: str,
+        desired_variables: list[dict[str, Any]],
+        summary: dict[str, Any],
+        dry_run: bool,
+        update_existing: bool,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+        current_variables = self.variables.list_variables_from_workspace_path(workspace_path)
+        var_by_name = _index_by_name(current_variables)
+        desired_var_by_name = _index_by_name(desired_variables)
+
         for name_lower, desired_var in desired_var_by_name.items():
             display_name = str(desired_var.get("name") or name_lower)
             existing = var_by_name.get(name_lower)
@@ -373,9 +351,11 @@ class WorkspaceWorkflowManager:
                     body = strip_dynamic_fields_deep(desired_var)
                     self.variables.create_variable(workspace_path, body)
                 continue
+
             if not update_existing:
                 summary["variables"]["skipped"].append(display_name)
                 continue
+
             if normalize_for_diff(desired_var) == normalize_for_diff(existing):
                 summary["variables"]["skipped"].append(display_name)
                 continue
@@ -393,14 +373,25 @@ class WorkspaceWorkflowManager:
                     )
                 self.variables.update_variable(path, body, fingerprint=existing.get("fingerprint"))
 
-        # Triggers second (tags may reference triggers).
+        return var_by_name, desired_var_by_name
+
+    def _sync_triggers(
+        self,
+        *,
+        workspace_path: str,
+        desired_triggers: list[dict[str, Any]],
+        summary: dict[str, Any],
+        dry_run: bool,
+        update_existing: bool,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, str]]:
         current_triggers = self.triggers.list_triggers_from_workspace_path(workspace_path)
         trig_by_name = _index_by_name(current_triggers)
-        desired_trig_by_name = _index_by_name([t for t in desired_triggers if isinstance(t, dict)])
+        desired_trig_by_name = _index_by_name(desired_triggers)
+
         trigger_name_to_id: dict[str, str] = {}
-        for t in current_triggers:
-            name = t.get("name")
-            trigger_id = t.get("triggerId")
+        for trigger in current_triggers:
+            name = trigger.get("name")
+            trigger_id = trigger.get("triggerId")
             if (
                 isinstance(name, str)
                 and isinstance(trigger_id, str)
@@ -421,9 +412,11 @@ class WorkspaceWorkflowManager:
                     if isinstance(created_id, str) and created_id.strip():
                         trigger_name_to_id[name_lower] = created_id
                 continue
+
             if not update_existing:
                 summary["triggers"]["skipped"].append(display_name)
                 continue
+
             if normalize_for_diff(desired_trig) == normalize_for_diff(existing):
                 summary["triggers"]["skipped"].append(display_name)
                 continue
@@ -446,10 +439,21 @@ class WorkspaceWorkflowManager:
                 if isinstance(updated_id, str) and updated_id.strip():
                     trigger_name_to_id[name_lower] = updated_id
 
-        # Tags last.
+        return trig_by_name, desired_trig_by_name, trigger_name_to_id
+
+    def _sync_tags(
+        self,
+        *,
+        workspace_path: str,
+        desired_tags: list[dict[str, Any]],
+        trigger_name_to_id: dict[str, str],
+        summary: dict[str, Any],
+        dry_run: bool,
+        update_existing: bool,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
         current_tags = self.tags.list_tags_from_workspace_path(workspace_path)
         tag_by_name = _index_by_name(current_tags)
-        desired_tag_by_name = _index_by_name([t for t in desired_tags if isinstance(t, dict)])
+        desired_tag_by_name = _index_by_name(desired_tags)
 
         for name_lower, raw_desired_tag in desired_tag_by_name.items():
             desired_tag = _tag_with_resolved_triggers(raw_desired_tag, trigger_name_to_id)
@@ -484,59 +488,178 @@ class WorkspaceWorkflowManager:
                     raise ValueError(f"Cannot update tag '{display_name}' (missing path/tagId).")
                 self.tags.update_tag(path, body, fingerprint=existing.get("fingerprint"))
 
-        if delete_missing:
-            desired_var_names = set(desired_var_by_name.keys())
-            desired_trig_names = set(desired_trig_by_name.keys())
-            desired_tag_names = set(desired_tag_by_name.keys())
+        return tag_by_name, desired_tag_by_name
 
-            # Delete in reverse dependency order: tags -> triggers -> variables.
-            for name_lower, existing in tag_by_name.items():
-                if name_lower in desired_tag_names:
-                    continue
-                display_name = str(existing.get("name") or name_lower)
-                summary["tags"]["deleted"].append(display_name)
-                if not dry_run:
-                    path = _entity_path_from_workspace(workspace_path, "tags", existing, "tagId")
-                    if path:
-                        self.tags.delete_tag(path)
+    def _apply_deletes(
+        self,
+        *,
+        workspace_path: str,
+        summary: dict[str, Any],
+        dry_run: bool,
+        delete_missing: bool,
+        var_by_name: dict[str, dict[str, Any]],
+        desired_var_by_name: dict[str, dict[str, Any]],
+        trig_by_name: dict[str, dict[str, Any]],
+        desired_trig_by_name: dict[str, dict[str, Any]],
+        tag_by_name: dict[str, dict[str, Any]],
+        desired_tag_by_name: dict[str, dict[str, Any]],
+    ) -> None:
+        if not delete_missing:
+            return
 
-            for name_lower, existing in trig_by_name.items():
-                if name_lower in desired_trig_names:
-                    continue
-                display_name = str(existing.get("name") or name_lower)
-                summary["triggers"]["deleted"].append(display_name)
-                if not dry_run:
-                    path = _entity_path_from_workspace(
-                        workspace_path, "triggers", existing, "triggerId"
-                    )
-                    if path:
-                        self.triggers.delete_trigger(path)
+        desired_var_names = set(desired_var_by_name.keys())
+        desired_trig_names = set(desired_trig_by_name.keys())
+        desired_tag_names = set(desired_tag_by_name.keys())
 
-            for name_lower, existing in var_by_name.items():
-                if name_lower in desired_var_names:
-                    continue
-                display_name = str(existing.get("name") or name_lower)
-                summary["variables"]["deleted"].append(display_name)
-                if not dry_run:
-                    path = _entity_path_from_workspace(
-                        workspace_path, "variables", existing, "variableId"
-                    )
-                    if path:
-                        self.variables.delete_variable(path)
+        # Delete in reverse dependency order: tags -> triggers -> variables.
+        for name_lower, existing in tag_by_name.items():
+            if name_lower in desired_tag_names:
+                continue
+            display_name = str(existing.get("name") or name_lower)
+            summary["tags"]["deleted"].append(display_name)
+            if dry_run:
+                continue
+            path = _entity_path_from_workspace(workspace_path, "tags", existing, "tagId")
+            if path:
+                self.tags.delete_tag(path)
 
-        summary["variables"]["created"] = _summarize_list(summary["variables"]["created"])
-        summary["variables"]["updated"] = _summarize_list(summary["variables"]["updated"])
-        summary["variables"]["deleted"] = _summarize_list(summary["variables"]["deleted"])
-        summary["variables"]["skipped"] = _summarize_list(summary["variables"]["skipped"])
-        summary["triggers"]["created"] = _summarize_list(summary["triggers"]["created"])
-        summary["triggers"]["updated"] = _summarize_list(summary["triggers"]["updated"])
-        summary["triggers"]["deleted"] = _summarize_list(summary["triggers"]["deleted"])
-        summary["triggers"]["skipped"] = _summarize_list(summary["triggers"]["skipped"])
-        summary["tags"]["created"] = _summarize_list(summary["tags"]["created"])
-        summary["tags"]["updated"] = _summarize_list(summary["tags"]["updated"])
-        summary["tags"]["deleted"] = _summarize_list(summary["tags"]["deleted"])
-        summary["tags"]["skipped"] = _summarize_list(summary["tags"]["skipped"])
+        for name_lower, existing in trig_by_name.items():
+            if name_lower in desired_trig_names:
+                continue
+            display_name = str(existing.get("name") or name_lower)
+            summary["triggers"]["deleted"].append(display_name)
+            if dry_run:
+                continue
+            path = _entity_path_from_workspace(workspace_path, "triggers", existing, "triggerId")
+            if path:
+                self.triggers.delete_trigger(path)
+
+        for name_lower, existing in var_by_name.items():
+            if name_lower in desired_var_names:
+                continue
+            display_name = str(existing.get("name") or name_lower)
+            summary["variables"]["deleted"].append(display_name)
+            if dry_run:
+                continue
+            path = _entity_path_from_workspace(workspace_path, "variables", existing, "variableId")
+            if path:
+                self.variables.delete_variable(path)
+
+    @staticmethod
+    def _finalize_summary(summary: dict[str, Any]) -> dict[str, Any]:
+        for resource in ("variables", "triggers", "tags"):
+            for k in ("created", "updated", "deleted", "skipped"):
+                summary[resource][k] = _summarize_list(summary[resource][k])
         return summary
+
+    def export_workspace_snapshot(
+        self,
+        *,
+        account_id: str,
+        container_id: str,
+        workspace_name: str,
+        create_if_missing: bool = False,
+    ) -> dict[str, Any]:
+        """Fetch tags/triggers/variables from a workspace into a stable snapshot shape."""
+        workspace_path = self._get_workspace_path(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_name=workspace_name,
+            create_if_missing=create_if_missing,
+        )
+
+        tags = self.tags.list_tags_from_workspace_path(workspace_path)
+        triggers = self.triggers.list_triggers_from_workspace_path(workspace_path)
+        variables = self.variables.list_variables_from_workspace_path(workspace_path)
+
+        return {
+            "workspaceName": workspace_name,
+            "workspacePath": workspace_path,
+            "tags": [normalize_for_diff(t) for t in _sort_by_name(tags)],
+            "triggers": [normalize_for_diff(t) for t in _sort_by_name(triggers)],
+            "variables": [normalize_for_diff(v) for v in _sort_by_name(variables)],
+        }
+
+    def diff_workspace_against_snapshot(
+        self,
+        *,
+        desired_snapshot: dict[str, Any],
+        account_id: str,
+        container_id: str,
+        workspace_name: str,
+    ) -> WorkspaceDiff:
+        """Diff a desired snapshot against the current workspace state."""
+        current = self.export_workspace_snapshot(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_name=workspace_name,
+            create_if_missing=False,
+        )
+        return diff_workspace(desired_snapshot, current)
+
+    def sync_workspace(
+        self,
+        *,
+        desired_snapshot: dict[str, Any],
+        account_id: str,
+        container_id: str,
+        workspace_name: str,
+        dry_run: bool = True,
+        delete_missing: bool = False,
+        update_existing: bool = True,
+    ) -> dict[str, Any]:
+        """Apply desired tags/triggers/variables to a workspace (idempotent by name)."""
+        workspace_path = self._get_workspace_path(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_name=workspace_name,
+            create_if_missing=True,
+        )
+        desired_variables, desired_triggers, desired_tags = self._parse_desired_snapshot(
+            desired_snapshot
+        )
+
+        summary = self._init_summary(
+            workspace_path=workspace_path,
+            dry_run=dry_run,
+            delete_missing=delete_missing,
+        )
+
+        var_by_name, desired_var_by_name = self._sync_variables(
+            workspace_path=workspace_path,
+            desired_variables=desired_variables,
+            summary=summary,
+            dry_run=dry_run,
+            update_existing=update_existing,
+        )
+        trig_by_name, desired_trig_by_name, trigger_name_to_id = self._sync_triggers(
+            workspace_path=workspace_path,
+            desired_triggers=desired_triggers,
+            summary=summary,
+            dry_run=dry_run,
+            update_existing=update_existing,
+        )
+        tag_by_name, desired_tag_by_name = self._sync_tags(
+            workspace_path=workspace_path,
+            desired_tags=desired_tags,
+            trigger_name_to_id=trigger_name_to_id,
+            summary=summary,
+            dry_run=dry_run,
+            update_existing=update_existing,
+        )
+        self._apply_deletes(
+            workspace_path=workspace_path,
+            summary=summary,
+            dry_run=dry_run,
+            delete_missing=delete_missing,
+            var_by_name=var_by_name,
+            desired_var_by_name=desired_var_by_name,
+            trig_by_name=trig_by_name,
+            desired_trig_by_name=desired_trig_by_name,
+            tag_by_name=tag_by_name,
+            desired_tag_by_name=desired_tag_by_name,
+        )
+        return self._finalize_summary(summary)
 
     def publish_from_workspace(
         self,
@@ -549,20 +672,12 @@ class WorkspaceWorkflowManager:
         dry_run: bool = True,
     ) -> dict[str, Any]:
         """Create + publish a container version from a named workspace."""
-        workspace = self.containers.get_or_create_workspace(
-            account_id,
-            container_id,
-            workspace_name,
+        workspace_path = self._get_workspace_path(
+            account_id=account_id,
+            container_id=container_id,
+            workspace_name=workspace_name,
             create_if_missing=True,
         )
-        workspace_id = workspace.get("workspaceId")
-        workspace_path = workspace.get("path") or (
-            self.containers.workspace_path(account_id, container_id, str(workspace_id))
-            if workspace_id
-            else None
-        )
-        if not isinstance(workspace_path, str) or not workspace_path.strip():
-            raise ValueError("Workspace response missing path/workspaceId.")
 
         if dry_run:
             return {

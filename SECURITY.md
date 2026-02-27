@@ -7,8 +7,8 @@ We only apply security fixes to the most recent commit on the default branch. Ta
 ## Reporting a Vulnerability
 
 1. Open a private advisory via the repository's GitHub Security tab.
-2. Provide a detailed description, reproduction steps, and potential impact.
-3. We will acknowledge receipt within 2 business days and aim to deliver a fix or mitigation within 14 days.
+1. Provide a detailed description, reproduction steps, and potential impact.
+1. We will acknowledge receipt within 2 business days and aim to deliver a fix or mitigation within 14 days.
 
 Please avoid publicly disclosing vulnerabilities before we have had a chance to address them.
 
