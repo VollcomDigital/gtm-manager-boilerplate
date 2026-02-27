@@ -36,3 +36,13 @@ def test_sync_workspace_does_not_redefine_tag_by_name() -> None:
     # The only allowed assignment is the one that receives `_sync_tags(...)` results.
     assert _count_assignments_to_name(fn, "tag_by_name") == 1
 
+
+def test_sync_workspace_does_not_assign_current_triggers() -> None:
+    """Arrange-Act-Assert: guard against dead current_triggers assignment regression."""
+    src_path = Path(__file__).resolve().parents[1] / "src" / "managers" / "workflow_manager.py"
+    tree = ast.parse(src_path.read_text(encoding="utf-8"))
+
+    fn = _get_function_def(tree, "sync_workspace")
+    # sync_workspace should orchestrate helpers; it should not fetch/assign current_triggers itself.
+    assert _count_assignments_to_name(fn, "current_triggers") == 0
+
