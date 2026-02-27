@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from managers.workflow_manager import diff_workspace
+from src.managers.workflow_manager import diff_workspace
 
 
 def test_diff_workspace_reports_create_update_delete() -> None:

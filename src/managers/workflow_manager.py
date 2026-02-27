@@ -10,10 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from managers.container_manager import ContainerManager
-from managers.tag_manager import TagManager
-from managers.trigger_manager import TriggerManager
-from managers.variable_manager import VariableManager
+from .container_manager import ContainerManager
+from .tag_manager import TagManager
+from .trigger_manager import TriggerManager
+from .variable_manager import VariableManager
 
 _WORKSPACE_PATH_MISSING_ERROR = "Workspace response missing path/workspaceId."
 _DESIRED_LISTS_MISSING_ERROR = "Desired snapshot must contain list fields: variables/triggers/tags."
@@ -88,7 +88,6 @@ def _sort_by_name(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _workspace_path_from_workspace_payload(
-    containers: ContainerManager,
     *,
     account_id: str,
     container_id: str,
@@ -96,9 +95,7 @@ def _workspace_path_from_workspace_payload(
 ) -> str:
     workspace_id = workspace.get("workspaceId")
     workspace_path = workspace.get("path") or (
-        containers.workspace_path(account_id, container_id, str(workspace_id))
-        if workspace_id
-        else None
+        f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}" if workspace_id else None
     )
     if not isinstance(workspace_path, str) or not workspace_path.strip():
         raise ValueError(_WORKSPACE_PATH_MISSING_ERROR)
@@ -282,18 +279,24 @@ class WorkspaceWorkflowManager:
         workspace_name: str,
         create_if_missing: bool,
     ) -> str:
-        workspace = self.containers.get_or_create_workspace(
-            account_id,
-            container_id,
-            workspace_name,
-            create_if_missing=create_if_missing,
-        )
-        return _workspace_path_from_workspace_payload(
-            self.containers,
-            account_id=account_id,
-            container_id=container_id,
-            workspace=workspace,
-        )
+        if create_if_missing:
+            result = self.containers.get_or_create_workspace(account_id, container_id, workspace_name)
+            workspace = result[1] if isinstance(result, tuple) and len(result) == 2 else result
+            return _workspace_path_from_workspace_payload(
+                account_id=account_id,
+                container_id=container_id,
+                workspace=workspace,
+            )
+
+        for workspace in self.containers.list_workspaces(account_id, container_id):
+            if str(workspace.get("name") or "").strip().lower() == workspace_name.strip().lower():
+                return _workspace_path_from_workspace_payload(
+                    account_id=account_id,
+                    container_id=container_id,
+                    workspace=workspace,
+                )
+
+        raise ValueError(f"Workspace not found: '{workspace_name}'")
 
     @staticmethod
     def _parse_desired_snapshot(
@@ -672,11 +675,17 @@ class WorkspaceWorkflowManager:
         dry_run: bool = True,
     ) -> dict[str, Any]:
         """Create + publish a container version from a named workspace."""
-        workspace_path = self._get_workspace_path(
+        # Resolve workspace id (needed for version creation).
+        result = self.containers.get_or_create_workspace(account_id, container_id, workspace_name)
+        workspace = result[1] if isinstance(result, tuple) and len(result) == 2 else result
+        workspace_id = str(workspace.get("workspaceId") or "").strip()
+        if not workspace_id:
+            raise ValueError("Workspace response missing workspaceId.")
+
+        workspace_path = _workspace_path_from_workspace_payload(
             account_id=account_id,
             container_id=container_id,
-            workspace_name=workspace_name,
-            create_if_missing=True,
+            workspace=workspace,
         )
 
         if dry_run:
@@ -687,16 +696,17 @@ class WorkspaceWorkflowManager:
                 "versionName": version_name,
             }
 
-        created = self.containers.create_container_version_from_workspace(
-            workspace_path,
-            name=version_name,
+        created = self.containers.create_container_version(
+            account_id,
+            container_id,
+            workspace_id,
+            version_name=version_name,
             notes=version_notes,
         )
-        version_path = (
-            (created.get("containerVersion") or {})
-            if isinstance(created.get("containerVersion"), dict)
-            else {}
-        ).get("path")
+        container_version = (
+            created.get("containerVersion") if isinstance(created.get("containerVersion"), dict) else created
+        )
+        version_path = container_version.get("path") if isinstance(container_version, dict) else None
         if not isinstance(version_path, str) or not version_path.strip():
             raise ValueError("Version creation did not return containerVersion.path.")
 

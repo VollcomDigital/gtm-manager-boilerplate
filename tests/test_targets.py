@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from utils.targets import load_target_mapping, resolve_account_and_container
+from src.utils.targets import load_target_mapping, resolve_account_and_container
 
 
 def test_load_target_mapping_flattens_grouped_entries(tmp_path) -> None:

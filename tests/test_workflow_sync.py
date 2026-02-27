@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from managers.workflow_manager import WorkspaceWorkflowManager
+from src.managers.workflow_manager import WorkspaceWorkflowManager
 
 
 class _FakeContainerManager:

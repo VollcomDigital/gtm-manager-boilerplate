@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 
-from exporters.export_ga4_from_gtm import (
+from src.exporters.export_ga4_from_gtm import (
     export_ga4_tags_to_csv,
     extract_parameters,
     flatten_parameter_value,

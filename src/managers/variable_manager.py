@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from utils.google_api import execute_with_retry, list_all_pages
+from ..utils.google_api import execute_with_retry, list_all_pages
 
 
 class VariableManager:

@@ -10,7 +10,6 @@ import pathlib
 import sys
 from typing import Any, Dict, List, Tuple
 
-import yaml
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
