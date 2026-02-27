@@ -113,7 +113,12 @@ class TriggerManager:
             if dry_run:
                 return "created", {"name": name, "dry_run": True}
             parent = self.workspace_path(account_id, container_id, workspace_id)
-            created = execute_with_retry(self._resource().create(parent=parent, body=desired).execute)
+            cleaned_desired = deepcopy(desired)
+            for k in READ_ONLY_TRIGGER_FIELDS:
+                cleaned_desired.pop(k, None)
+            created = execute_with_retry(
+                self._resource().create(parent=parent, body=cleaned_desired).execute
+            )
             return "created", created
 
         desired_canon = canonicalize_for_diff(desired, read_only_fields=READ_ONLY_TRIGGER_FIELDS)

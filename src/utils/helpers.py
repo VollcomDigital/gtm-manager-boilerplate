@@ -51,7 +51,10 @@ def canonicalize_for_diff(value: Any, *, read_only_fields: set[str] | None = Non
         - dict keys sorted
         - lists normalized recursively (and sorted when safely possible)
     """
-    ro = read_only_fields or set()
+    if read_only_fields is None:
+        ro = COMMON_READ_ONLY_FIELDS
+    else:
+        ro = read_only_fields
 
     if isinstance(value, list):
         items = [canonicalize_for_diff(v, read_only_fields=ro) for v in value]
