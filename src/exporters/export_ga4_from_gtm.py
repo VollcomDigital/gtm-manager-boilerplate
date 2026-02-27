@@ -179,8 +179,7 @@ def export_ga4_tags_to_csv(
     Pull latest container version, filter GA4 tags, flatten parameters, and write CSV.
     Returns the number of GA4 tags exported.
     """
-    version_path = f"accounts/{account_id}/containers/{container_id}/versions/latest"
-    response = service.accounts().containers().versions().latest(path=version_path).execute()
+    response = _resolve_latest_response(service, account_id, container_id, version_response)
 
     tags = response.get("tag", []) or []
     ga4_tags = [tag for tag in tags if is_ga4_tag(tag)]

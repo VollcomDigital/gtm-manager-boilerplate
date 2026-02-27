@@ -580,29 +580,6 @@ class ContainerManager:
 
         return variables
 
-
-def _new_entity_summary() -> dict[str, list[str]]:
-    return {"created": [], "updated": [], "deleted": [], "noop": []}
-
-
-def _record_summary_action(
-    entity_summary: dict[str, list[str]], action: str, payload: dict[str, Any]
-) -> None:
-    name = str(payload.get("name", "")).strip()
-    if not name:
-        return
-
-    if action == "created":
-        entity_summary["created"].append(name)
-    elif action == "updated":
-        entity_summary["updated"].append(name)
-    elif action == "noop":
-        entity_summary["noop"].append(name)
-
-    for key in ("created", "updated", "noop"):
-        entity_summary[key].sort()
-
-
     @staticmethod
     def container_path(account_id: str, container_id: str) -> str:
         """Build a GTM container API path."""
@@ -730,3 +707,25 @@ def _record_summary_action(
         """Publish a container version by API path."""
         req = self.service.accounts().containers().versions().publish(path=container_version_path)
         return execute_with_retry(req.execute)
+
+
+def _new_entity_summary() -> dict[str, list[str]]:
+    return {"created": [], "updated": [], "deleted": [], "noop": []}
+
+
+def _record_summary_action(
+    entity_summary: dict[str, list[str]], action: str, payload: dict[str, Any]
+) -> None:
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        return
+
+    if action == "created":
+        entity_summary["created"].append(name)
+    elif action == "updated":
+        entity_summary["updated"].append(name)
+    elif action == "noop":
+        entity_summary["noop"].append(name)
+
+    for key in ("created", "updated", "noop"):
+        entity_summary[key].sort()
