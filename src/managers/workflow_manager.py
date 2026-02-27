@@ -351,7 +351,6 @@ class WorkspaceWorkflowManager:
         current_tags = self.tags.list_tags_from_workspace_path(workspace_path)
 
         var_by_name = _index_by_name(current_variables)
-        trig_by_name = _index_by_name(current_triggers)
         tag_by_name = _index_by_name(current_tags)
 
         summary: dict[str, Any] = {
