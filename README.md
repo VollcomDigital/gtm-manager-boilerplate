@@ -5,6 +5,7 @@ Public boilerplate for managing Google Tag Manager (GTM) containers and tags acr
 ## What's inside
 
 - GA4 exporter (`src/exporters/export_ga4_from_gtm.py`) that pulls the latest container version and writes GA4 tags plus parameters to CSV.
+- Optional trigger and variable exporters (CSV) plus a workspace snapshot exporter (JSON) from the latest container version.
 - Target-key-aware configuration so multiple container IDs can be managed from a single YAML mapping.
 - Poetry, Docker Compose, and pre-commit hooks to keep development consistent across operating systems.
 
@@ -49,6 +50,18 @@ poetry run python src/exporters/export_ga4_from_gtm.py `
 ```
 
 Grouped entries (e.g., `central: { ga4: {...} }`) are flattened automatically to keys such as `central_ga4`.
+
+Optional extended exports (triggers, variables, and JSON snapshot):
+```bash
+poetry run python src/exporters/export_ga4_from_gtm.py \
+  --auth user \
+  --target-key site_a \
+  --credentials /absolute/path/to/client_secrets.json \
+  --skip-ga4 \
+  --triggers-output ./data/exports/triggers.csv \
+  --variables-output ./data/exports/variables.csv \
+  --snapshot-output ./data/exports/workspace.snapshot.json
+```
 
 ### Listing GTM accounts
 
